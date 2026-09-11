@@ -1,4 +1,5 @@
 import 'package:aradia/utils/app_logger.dart';
+import 'package:aradia/utils/media_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -221,12 +222,11 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                               Column(mainAxisSize: MainAxisSize.min, children: [
                                 DownloadButton(
                                   audiobook: widget.audiobook,
-                                  audiobookFiles: state.audiobookFiles,
-                                  onChanged: widget.isDownload
-                                      ? () => _audiobookDetailsBloc.add(
-                                          FetchAudiobookDetails(
-                                              widget.audiobook.id, true, false))
-                                      : null,
+                                  audiobookFiles:
+                                      state.catalogue ?? state.audiobookFiles,
+                                  onChanged: () => _audiobookDetailsBloc.add(
+                                      FetchAudiobookDetails(widget.audiobook.id,
+                                          widget.isDownload, false)),
                                 ),
                                 const Text('Manage downloads',
                                     style: TextStyle(color: Colors.white)),
@@ -351,14 +351,33 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                      subtitle: Text(
-                                        state.audiobookFiles[index]
-                                            .durationLabel,
-                                        style: GoogleFonts.ubuntu(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
+                                      subtitle: Row(children: [
+                                        Flexible(
+                                            child: Text(
+                                          state.audiobookFiles[index]
+                                              .durationLabel,
+                                          style: GoogleFonts.ubuntu(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        )),
+                                        if (!widget.isLocal &&
+                                            MediaHelper.asLocalPath(state
+                                                    .audiobookFiles[index]
+                                                    .url) !=
+                                                null) ...[
+                                          const SizedBox(width: 6),
+                                          Tooltip(
+                                              message:
+                                                  'Downloaded • Available offline',
+                                              child: Icon(
+                                                  Icons.check_circle_outline,
+                                                  size: 16,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary)),
+                                        ],
+                                      ]),
                                       trailing: IconButton(
                                         onPressed: () => _playChapter(
                                           state.audiobookFiles,

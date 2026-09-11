@@ -9,8 +9,9 @@ final class AudiobookDetailsLoading extends AudiobookDetailsState {}
 
 final class AudiobookDetailsLoaded extends AudiobookDetailsState {
   final List<AudiobookFile> audiobookFiles;
+  final List<AudiobookFile>? catalogue;
 
-  AudiobookDetailsLoaded(this.audiobookFiles);
+  AudiobookDetailsLoaded(this.audiobookFiles, {this.catalogue});
 }
 
 final class AudiobookDetailsError extends AudiobookDetailsState {}

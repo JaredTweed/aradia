@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:aradia/resources/services/download/chapter_downloads.dart';
 
 import 'package:aradia/utils/app_logger.dart';
 import 'package:bloc/bloc.dart';
@@ -53,16 +57,45 @@ class AudiobookDetailsBloc
       if (isLocal) {
         audiobookFiles =
             Right(await LocalBookLibrary.filesForId(id, fallback: event.files));
-      } else if (isDownload) {
-        AppLogger.debug('fetching audiobook files from downloaded files');
-        audiobookFiles = await AudiobookFile.fromDownloadedFiles(id);
-        if (audiobookFiles.isLeft() ||
-            audiobookFiles.getOrElse((_) => []).isEmpty) {
-          audiobookFiles = await ArchiveApi().getAudiobookFiles(id);
-        }
       } else {
-        AppLogger.debug('fetching audiobook files from api');
-        audiobookFiles = await ArchiveApi().getAudiobookFiles(id);
+        final base = await getExternalStorageDirectory();
+        final directory =
+            base == null ? null : Directory('${base.path}/downloads/$id');
+        final cached =
+            directory == null ? null : File('${directory.path}/catalogue.json');
+        List<AudiobookFile>? catalogue;
+        if (cached != null && await cached.exists()) {
+          try {
+            catalogue = (jsonDecode(await cached.readAsString()) as List)
+                .map((item) => AudiobookFile.fromMap(item as Map))
+                .toList();
+          } catch (e) {
+            AppLogger.debug('Unable to read chapter catalogue: $e');
+          }
+        }
+        if (catalogue == null || catalogue.isEmpty) {
+          final remote = await ArchiveApi().getAudiobookFiles(id);
+          catalogue = remote.fold((_) => null, (files) => files);
+          if (catalogue != null &&
+              cached != null &&
+              await directory!.exists()) {
+            await cached.writeAsString(jsonEncode([
+              for (var i = 0; i < catalogue.length; i++)
+                ChapterDownloads.entry(catalogue[i], i)
+            ]));
+          }
+        }
+        if (catalogue != null && catalogue.isNotEmpty) {
+          final playable = directory == null
+              ? catalogue
+              : await ChapterDownloads.withDownloadedFiles(
+                  directory, catalogue);
+          emit(AudiobookDetailsLoaded(playable, catalogue: catalogue));
+          return;
+        }
+        audiobookFiles = isDownload
+            ? await AudiobookFile.fromDownloadedFiles(id)
+            : const Left('Unable to load chapters');
       }
 
       audiobookFiles.fold((l) {

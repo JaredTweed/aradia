@@ -121,8 +121,23 @@ class HistoryOfAudiobookItem {
   int indexIn(List<AudiobookFile> files) {
     if (index < 0 || index >= audiobookFiles.length) return -1;
     final previous = audiobookFiles[index];
-    return files.indexWhere(
+    final exact = files.indexWhere(
         (file) => file.url == previous.url && file.startMs == previous.startMs);
+    if (exact >= 0) return exact;
+    // Downloading or deleting a chapter changes its URL, not its identity.
+    final matches = <int>[
+      for (var i = 0; i < files.length; i++)
+        if (previous.title != null &&
+            files[i].title == previous.title &&
+            files[i].startMs == previous.startMs)
+          i
+    ];
+    if (matches.length == 1) return matches.single;
+    return matches
+            .where((i) =>
+                previous.track != null && files[i].track == previous.track)
+            .firstOrNull ??
+        -1;
   }
 
   final Audiobook audiobook;

@@ -253,10 +253,10 @@ class MyAudioHandler extends BaseAudioHandler {
     int initialIndex,
     int positionInMilliseconds,
   ) async {
-    if (audiobook.origin == 'download' && files.isNotEmpty) {
+    if (audiobook.origin != 'local' && files.isNotEmpty) {
       final current = files[initialIndex.clamp(0, files.length - 1)];
-      final local = asLocalPath(current.url);
-      if (local == null || !await File(local).exists()) {
+      final local = MediaHelper.asLocalPath(current.url);
+      if (local != null && !await File(local).exists()) {
         final remote = await ArchiveApi().getAudiobookFiles(audiobook.id);
         files = remote.fold(
             (error) => throw StateError(
@@ -585,22 +585,21 @@ class MyAudioHandler extends BaseAudioHandler {
   /// Remove deleted offline audio from the live queue as well as storage.
   Future<void> downloadedChapterDeleted(String bookId, String path) async {
     final saved = playingAudiobookDetailsBox.get('audiobook');
-    if (saved is! Map ||
-        saved['id'] != bookId ||
-        saved['origin'] != 'download') {
+    if (saved is! Map || saved['id'] != bookId || saved['origin'] == 'local') {
       return;
     }
     final files =
         (playingAudiobookDetailsBox.get('audiobookFiles') as List? ?? [])
             .map((value) => AudiobookFile.fromMap(value as Map))
             .toList();
-    if (!files.any((file) => asLocalPath(file.url) == path)) return;
+    if (!files.any((file) => MediaHelper.asLocalPath(file.url) == path)) return;
     final index = (_player.currentIndex ?? 0).clamp(0, files.length - 1);
     final current = files[index];
     final position = _player.position.inMilliseconds;
     final wasPlaying = _player.playing;
-    final remaining =
-        files.where((file) => asLocalPath(file.url) != path).toList();
+    final remaining = files
+        .where((file) => MediaHelper.asLocalPath(file.url) != path)
+        .toList();
     await pause();
     if (remaining.isEmpty) {
       await stop();
@@ -623,9 +622,10 @@ class MyAudioHandler extends BaseAudioHandler {
     await _pendingInitialization;
     await _restoreQueueFromBoxIfEmpty(); // only at cold start
     final saved = playingAudiobookDetailsBox.get('audiobook');
-    final currentPath = asLocalPath(mediaItem.value?.extras?['url'] as String?);
+    final currentPath =
+        MediaHelper.asLocalPath(mediaItem.value?.extras?['url'] as String?);
     if (saved is Map &&
-        saved['origin'] == 'download' &&
+        saved['origin'] != 'local' &&
         currentPath != null &&
         !await File(currentPath).exists()) {
       final files =
