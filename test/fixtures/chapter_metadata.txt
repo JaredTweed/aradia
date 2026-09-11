@@ -1,0 +1,12 @@
+;FFMETADATA1
+title=Chapter parser regression fixture
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=750
+title=Introduction
+[CHAPTER]
+TIMEBASE=1/1000
+START=750
+END=2000
+title=Chapter One

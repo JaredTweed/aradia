@@ -75,6 +75,9 @@ class MyAudiobooks extends StatefulWidget {
 
 class _MyAudiobooksState extends State<MyAudiobooks> {
   int _currentPage = 1;
+  bool _loading = false;
+  bool _hasMore = true;
+  bool _failed = false;
   final List<Audiobook> audiobooks = [];
   final double _eachContainerWidth = 175;
 
@@ -85,16 +88,19 @@ class _MyAudiobooksState extends State<MyAudiobooks> {
     if (widget.autoFetch) {
       _fetchData();
     }
-    widget.scrollController.addListener(() {
-      if (widget.scrollController.position.pixels ==
-          widget.scrollController.position.maxScrollExtent) {
-        _currentPage++;
-        _fetchData();
-      }
-    });
+    widget.scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (widget.scrollController.position.extentAfter < 250 && !_failed) {
+      _fetchData();
+    }
   }
 
   void _fetchData() {
+    if (_loading || !_hasMore) return;
+    _loading = true;
+    _failed = false;
     final fetchEvent = fetchTypeMapping[widget.fetchType]?['fetchEvent'];
     if (fetchEvent != null && fetchEvent is Function) {
       if (widget.fetchType == AudiobooksFetchType.genre &&
@@ -133,7 +139,7 @@ class _MyAudiobooksState extends State<MyAudiobooks> {
 
   @override
   void dispose() {
-    widget.scrollController.dispose();
+    widget.scrollController.removeListener(_onScroll);
     super.dispose();
   }
 
@@ -164,19 +170,37 @@ class _MyAudiobooksState extends State<MyAudiobooks> {
           child: BlocConsumer<HomeBloc, HomeState>(
             bloc: widget.homeBloc,
             listener: (context, state) {
-              if (_isLoadingState(state)) {
+              if (state is HomeInitial) {
                 setState(() {
                   _currentPage = widget.initialPage;
                   audiobooks.clear();
+                  _loading = false;
+                  _hasMore = true;
+                  _failed = false;
                 });
+                _fetchData();
               }
               if (_isSuccessState(state)) {
                 setState(() {
-                  audiobooks.addAll((state as dynamic).audiobooks);
+                  final incoming =
+                      (state as dynamic).audiobooks as List<Audiobook>;
+                  final ids = audiobooks.map((b) => b.id).toSet();
+                  audiobooks.addAll(incoming.where((b) => ids.add(b.id)));
+                  _hasMore = incoming.length >= widget.rowsPerPage;
+                  _currentPage++;
+                  _loading = false;
+                  _failed = false;
+                });
+              }
+              if (_isFailedState(state)) {
+                setState(() {
+                  _loading = false;
+                  _failed = true;
                 });
               }
             },
             buildWhen: (previous, current) =>
+                current is HomeInitial ||
                 _isSuccessState(current) ||
                 _isLoadingState(current) ||
                 _isFailedState(current),
@@ -188,7 +212,10 @@ class _MyAudiobooksState extends State<MyAudiobooks> {
                 );
               }
               if (_isFailedState(state) && audiobooks.isEmpty) {
-                return const Center(child: Text("Failed to fetch audiobooks"));
+                return Center(
+                    child: TextButton(
+                        onPressed: _fetchData,
+                        child: const Text('Could not load books. Retry')));
               }
 
               return ListView.builder(
@@ -196,9 +223,15 @@ class _MyAudiobooksState extends State<MyAudiobooks> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(
                     horizontal: 8), // <-- same as FavouriteSection
-                itemCount: audiobooks.length + 1,
+                itemCount: audiobooks.length + (_hasMore ? 1 : 0),
                 itemBuilder: (context, index) {
                   if (index == audiobooks.length) {
+                    if (!_loading) {
+                      return Center(
+                          child: TextButton(
+                              onPressed: _fetchData,
+                              child: Text(_failed ? 'Retry' : 'Load more')));
+                    }
                     // keep the paging spinner at the end (FavouriteSection doesn't page, but this preserves your UX)
                     return const Center(
                       child: SizedBox(

@@ -96,6 +96,6 @@ extension TimerDurations on OptimizedTimer {
   static const Duration oneHour = Duration(minutes: 60);
   static const Duration ninetyMinutes = Duration(minutes: 90);
 
-  /// Special duration to indicate end-of-track timer
-  static const Duration endOfTrack = Duration(milliseconds: -1);
+  /// Special duration to indicate end-of-chapter timer
+  static const Duration endOfChapter = Duration(milliseconds: -1);
 }

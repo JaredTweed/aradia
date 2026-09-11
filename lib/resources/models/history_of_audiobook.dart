@@ -117,6 +117,14 @@ class HistoryOfAudiobook {
 }
 
 class HistoryOfAudiobookItem {
+  /// Keep the same chapter when newly downloaded chapters change queue indexes.
+  int indexIn(List<AudiobookFile> files) {
+    if (index < 0 || index >= audiobookFiles.length) return -1;
+    final previous = audiobookFiles[index];
+    return files.indexWhere(
+        (file) => file.url == previous.url && file.startMs == previous.startMs);
+  }
+
   final Audiobook audiobook;
   final List<AudiobookFile> audiobookFiles;
   int index;

@@ -33,32 +33,45 @@ class MediaHelper {
   }
 
   /// Get metadata of an audio file using SAF
+  static final _metadata = <String, ({Metadata value, DateTime time})>{};
+  static final _metadataRequests = <String, Future<Metadata>>{};
+  static void clearMetadataCache() => _metadata.clear();
+
   static Future<Metadata> getAudioMetadata(
       String filePath, String rootFolderPath) async {
-    try {
-      AppLogger.info('Attempting SAF sync cache for: $filePath');
-
-      Saf saf = Saf(rootFolderPath);
-      bool? result = await saf.sync().timeout(const Duration(seconds: 60));
-
-      if (result == true) {
-        String fileName = path.basename(filePath);
-        String cacheDir = await _getCacheDirectory();
-        String cachedFilePath =
-            path.join(cacheDir, 'audiobooks_cache', fileName);
-
-        if (await File(cachedFilePath).exists()) {
-          AppLogger.info('File found in sync cache: $cachedFilePath');
-          final metadata =
-              await MetadataRetriever.fromFile(File(cachedFilePath))
-                  .timeout(const Duration(seconds: 10));
-          AppLogger.info(
-              'Successfully read metadata from cached file: $cachedFilePath');
-          return metadata;
+    final stat = await File(filePath).stat();
+    final key = '$rootFolderPath|$filePath|${stat.modified}|${stat.size}';
+    final cached = _metadata[key];
+    if (cached != null &&
+        DateTime.now().difference(cached.time) < const Duration(minutes: 5)) {
+      return cached.value;
+    }
+    return _metadataRequests.putIfAbsent(key, () async {
+      try {
+        final value = await _readAudioMetadata(filePath, rootFolderPath);
+        if (value.trackDuration != null &&
+            (value.albumArt?.length ?? 0) < 1024 * 1024) {
+          if (_metadata.length >= 20) _metadata.remove(_metadata.keys.first);
+          _metadata[key] = (value: value, time: DateTime.now());
         }
+        return value;
+      } finally {
+        _metadataRequests.remove(key);
       }
+    });
+  }
 
-      AppLogger.info('Sync cache failed, trying singleCache for: $filePath');
+  static Future<Metadata> _readAudioMetadata(
+      String filePath, String rootFolderPath) async {
+    try {
+      // Most imported files are directly readable. SAF copies only this file
+      // when Android's storage permissions require it.
+      try {
+        return await MetadataRetriever.fromFile(File(filePath))
+            .timeout(const Duration(seconds: 10));
+      } catch (_) {
+        // Fall back to the granted document tree.
+      }
       String? cachePath = await Saf(rootFolderPath)
           .singleCache(
             filePath: filePath,
@@ -207,12 +220,6 @@ class MediaHelper {
         .replaceAll(' ', '_')
         .replaceAll(RegExp(r'_+'), '_')
         .toLowerCase();
-  }
-
-  /// Get cache directory
-  static Future<String> _getCacheDirectory() async {
-    final externalDir = await getExternalStorageDirectory();
-    return externalDir?.path ?? '';
   }
 
   static String decodePath(String s) {

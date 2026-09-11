@@ -1,3 +1,4 @@
+import 'package:aradia/resources/services/download/chapter_downloads.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +21,26 @@ class AudiobookFile {
 
   final int? startMs; // chapter start (ms from file start)
   final int? durationMs; // chapter duration (ms); null => to EOF
+
+  Duration? get duration {
+    if (durationMs != null && durationMs! > 0) {
+      return Duration(milliseconds: durationMs!);
+    }
+    if (length != null && length! > 0) {
+      return Duration(milliseconds: (length! * 1000).round());
+    }
+    return null;
+  }
+
+  String get durationLabel {
+    final value = duration;
+    if (value == null) return 'Duration unavailable';
+    final seconds = value.inSeconds;
+    final minutes = (seconds ~/ 60).toString();
+    final remainder = (seconds % 60).toString().padLeft(2, '0');
+    if (seconds < 3600) return '$minutes:$remainder';
+    return '${value.inHours}:${(value.inMinutes % 60).toString().padLeft(2, '0')}:$remainder';
+  }
 
   AudiobookFile.fromJson(Map json)
       : identifier = json["identifier"]?.toString(),
@@ -66,7 +87,7 @@ class AudiobookFile {
       "name": parentTitle,
       "track": track,
       "size": 0,
-      "length": null, // player derives effective length via ClippingAudioSource
+      "length": durationMs == null ? null : durationMs / 1000,
       "url": url,
       "highQCoverImage": highQCoverImage,
       "startMs": startMs,
@@ -145,9 +166,22 @@ class AudiobookFile {
     try {
       final appDir = await getExternalStorageDirectory();
       final downloadDir = Directory('${appDir?.path}/downloads/$audiobookId');
+      final manifest = await ChapterDownloads.completed(downloadDir);
+      final savedChapters = manifest
+          .map((entry) => AudiobookFile.fromMap({
+                ...entry,
+                'identifier': audiobookId,
+                'url': '${downloadDir.path}/${entry['filename']}',
+                'name': entry['filename'],
+                'track': (entry['order'] as int) + 1,
+              }))
+          .toList();
+      final savedNames = manifest.map((entry) => entry['filename']).toSet();
       List<FileSystemEntity> files = downloadDir
           .listSync()
-          .where((file) => file.path.endsWith('.mp3'))
+          .where((file) =>
+              file.path.endsWith('.mp3') &&
+              !savedNames.contains(file.path.split('/').last))
           .toList();
       final numbered = files.every(
           (file) => RegExp(r'^\d{5}-').hasMatch(file.path.split('/').last));
@@ -158,7 +192,7 @@ class AudiobookFile {
       AppLogger.debug(
           'Now the files are going to be parsed from the downloaded files');
 
-      List<AudiobookFile> audiobookFiles = <AudiobookFile>[];
+      List<AudiobookFile> audiobookFiles = [...savedChapters];
 
       for (var i = 0; i < files.length; i++) {
         try {
@@ -203,6 +237,9 @@ class AudiobookFile {
         }
       }
 
+      if (manifest.isNotEmpty || numbered) {
+        audiobookFiles.sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+      }
       return Right(audiobookFiles);
     } catch (e) {
       AppLogger.debug('Unexpected error: $e');

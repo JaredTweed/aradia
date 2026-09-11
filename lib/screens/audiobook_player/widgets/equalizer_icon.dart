@@ -59,6 +59,9 @@ class EqualizerIconState extends State<EqualizerIcon> {
       painter: _EqualizerPainter(
         bands: bands,
         enabled: _settings.enabled,
+        color: _settings.enabled
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -67,21 +70,23 @@ class EqualizerIconState extends State<EqualizerIcon> {
 class _EqualizerPainter extends CustomPainter {
   final List<double> bands;
   final bool enabled;
+  final Color color;
 
   _EqualizerPainter({
     required this.bands,
     required this.enabled,
+    required this.color,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.fill
-      ..color = enabled ? Colors.deepOrange : Colors.white54;
+      ..color = color;
 
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.deepOrange.withValues(alpha: 0.3)
+      ..color = color.withValues(alpha: 0.3)
       ..strokeWidth = 0.5;
 
     // 5 columns (one per band), 5 rows
@@ -118,6 +123,8 @@ class _EqualizerPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EqualizerPainter oldDelegate) {
-    return oldDelegate.bands != bands || oldDelegate.enabled != enabled;
+    return oldDelegate.bands != bands ||
+        oldDelegate.enabled != enabled ||
+        oldDelegate.color != color;
   }
 }

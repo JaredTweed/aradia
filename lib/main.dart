@@ -11,6 +11,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:aradia/resources/models/audiobook.dart';
+import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/screens/audiobook_details/audiobook_details.dart';
 import 'package:aradia/screens/audiobook_details/bloc/audiobook_details_bloc.dart';
 import 'package:aradia/screens/download_audiobook/downloads_page.dart';
@@ -148,6 +149,7 @@ class _MyAppState extends State<MyApp> {
                         audiobook: audiobook,
                         isDownload: isDownload,
                         isLocal: isLocal,
+                        initialFiles: extras['files'] as List<AudiobookFile>?,
                       )),
                     );
                   },

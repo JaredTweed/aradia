@@ -50,7 +50,7 @@ class ChromeCastButton extends StatelessWidget {
         return IconButton(
           icon: Icon(
             isConnected ? Icons.cast_connected : Icons.cast,
-            color: isConnected ? Colors.deepOrange : Colors.white,
+            color: isConnected ? Theme.of(context).colorScheme.primary : null,
           ),
           onPressed: () async {
             if (isConnected) {

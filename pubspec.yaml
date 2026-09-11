@@ -17,6 +17,7 @@ dependencies:
     sdk: flutter
 
   http: ^1.2.2
+  html: ^0.15.6
   fpdart: ^1.1.1
   bloc: ^9.0.0
   flutter_bloc: ^9.1.1
@@ -69,6 +70,7 @@ flutter_launcher_icons:
 
   # Adaptive icon layers:
   adaptive_icon_foreground: assets/icon/fg.png     # transparent background
+  adaptive_icon_foreground_inset: 21
   adaptive_icon_background: "#FF7A00"              # your orange
   adaptive_icon_monochrome: assets/icon/mono.png   # for Android 13+ themed icons
 

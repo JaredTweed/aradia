@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
 
 import '../../../resources/designs/app_colors.dart';
-import 'characters_dialog.dart';
 
 class Controls extends StatefulWidget {
   final MyAudioHandler audioHandler;
@@ -123,21 +122,6 @@ class _ControlsState extends State<Controls> {
     );
   }
 
-  void _showCharactersDialog() {
-    final audiobookId = widget.audioHandler.getCurrentAudiobookId();
-    if (audiobookId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No audiobook is currently playing')),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => CharactersDialog(audiobookId: audiobookId),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     //final isCasting = widget.audioHandler.chromeCastService.isConnected;
@@ -164,14 +148,6 @@ class _ControlsState extends State<Controls> {
               onPressed: _changeVolume,
               icon: const Icon(Ionicons.volume_high),
               tooltip: 'Adjust Volume',
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white
-                  : Colors.black,
-            ),
-            IconButton(
-              onPressed: _showCharactersDialog,
-              icon: const Icon(Ionicons.people),
-              tooltip: 'Manage Characters',
               color: Theme.of(context).brightness == Brightness.dark
                   ? Colors.white
                   : Colors.black,
@@ -212,8 +188,7 @@ class _ControlsState extends State<Controls> {
           children: [
             IconButton(
               onPressed: () {
-                widget.audioHandler.seek(
-                    widget.audioHandler.position - const Duration(seconds: 10));
+                widget.audioHandler.rewind();
               },
               icon: const Icon(Icons.replay_10),
               iconSize: 32.0,
@@ -275,10 +250,9 @@ class _ControlsState extends State<Controls> {
             ),
             IconButton(
               onPressed: () {
-                widget.audioHandler.seek(
-                    widget.audioHandler.position + const Duration(seconds: 10));
+                widget.audioHandler.fastForward();
               },
-              icon: const Icon(Icons.forward_10),
+              icon: const Icon(Icons.forward_30),
               iconSize: 32.0,
               color: Theme.of(context).brightness == Brightness.dark
                   ? Colors.white

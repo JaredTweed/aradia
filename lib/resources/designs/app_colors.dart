@@ -8,7 +8,7 @@ class AppColors {
   static const Color scaffoldBackgroundColor =
       Color.fromRGBO(245, 245, 245, 1); // #F5F5F5
   static const Color darkScaffoldBackgroundColor =
-      Color.fromRGBO(13,13,13, 1); // #222222
+      Color.fromRGBO(13, 13, 13, 1); // #222222
 
   // Text colors
   static const Color textColor = Color.fromRGBO(34, 34, 34, 1); // #222222
@@ -39,7 +39,7 @@ class AppColors {
       Color.fromRGBO(245, 245, 245, 1); // #F5F5F5
   static const Color listTileSubtitleColor =
       Color.fromRGBO(200, 200, 200, 1); // #C8C8C8
-  static const Color listTileBackgroundLight = Color(0xFFF0F2F5); // Tile color
+  static const Color listTileBackgroundLight = Color(0xFFF0F0F0); // Tile color
   static const Color subtitleTextColorLight = Color(0xFF757575); // Subtle gray
   static const Color lightOrange = Color.fromRGBO(204, 119, 34, 0.1);
 }

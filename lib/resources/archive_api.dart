@@ -3,25 +3,11 @@ import 'dart:async';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:aradia/resources/models/audiobook.dart';
-import 'package:http/http.dart' as http;
+import 'package:aradia/resources/services/json_response_cache.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/utils/app_logger.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-
-// ─── Simple HTTP cache with ETag/Last-Modified ────────────────────────────────
-class _CacheEntry {
-  final String body;
-  final String? etag;
-  final String? lastModified;
-  final DateTime storedAt;
-  _CacheEntry({
-    required this.body,
-    this.etag,
-    this.lastModified,
-    required this.storedAt,
-  });
-}
 
 /// Fields we want back from Archive.org
 const _fields =
@@ -270,63 +256,9 @@ const Map<String, List<String>> genresSubjectsJson = {
 };
 
 class ArchiveApi {
-  // Reuse one client to keep TCP alive & reduce handshake cost.
-  static final http.Client _client = http.Client();
-
-  // Very small in-memory cache (URL -> response + validators).
-  static final Map<String, _CacheEntry> _cache = <String, _CacheEntry>{};
-  static const Duration _maxStale = Duration(minutes: 15); // tune as you like
-  static const int _maxEntries = 100; // tiny LRU-ish trim
-
-  // Centralized GET with conditional requests.
-  static Future<String> _getJson(String url) async {
-    final headers = <String, String>{};
-    final cached = _cache[url];
-
-    if (cached != null &&
-        DateTime.now().difference(cached.storedAt) < _maxStale) {
-      if (cached.etag != null) headers['If-None-Match'] = cached.etag!;
-      if (cached.lastModified != null) {
-        headers['If-Modified-Since'] = cached.lastModified!;
-      }
-    }
-
-    final resp = await _client
-        .get(Uri.parse(url), headers: headers)
-        .timeout(const Duration(seconds: 30));
-
-    if (resp.statusCode == 304 && cached != null) {
-      // Not modified — serve cached body
-      return cached.body;
-    }
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode} for $url');
-    }
-
-    final etag = resp.headers['etag'];
-    final lastMod = resp.headers['last-modified'];
-
-    // Store/refresh cache (simple trim to avoid unbounded growth)
-    _cache[url] = _CacheEntry(
-      body: resp.body,
-      etag: etag,
-      lastModified: lastMod,
-      storedAt: DateTime.now(),
-    );
-    if (_cache.length > _maxEntries) {
-      // Drop the stalest ~10% (super simple)
-      final entries = _cache.entries.toList()
-        ..sort((a, b) => a.value.storedAt.compareTo(b.value.storedAt));
-      for (var i = 0; i < (_maxEntries / 10).ceil(); i++) {
-        _cache.remove(entries[i].key);
-      }
-    }
-
-    return resp.body;
-  }
-
-  // Optional: call this from app shutdown if you want.
-  static void dispose() => _client.close();
+  static final _responses = JsonResponseCache();
+  static Future<String> _getJson(String url) => _responses.get(url);
+  static void dispose() => _responses.close();
 
   Future<Either<String, List<Audiobook>>> getLatestAudiobook(
     int page,
@@ -449,10 +381,9 @@ class ArchiveApi {
 
   Future<Either<String, List<Audiobook>>> _fetchAudiobooks(String url) async {
     try {
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
+      final body = await _getJson(url);
+      {
+        final decoded = json.decode(body);
         final docs =
             (decoded['response']['docs'] as List).cast<Map<String, dynamic>>();
 
@@ -465,8 +396,6 @@ class ArchiveApi {
         }
 
         return Right(Audiobook.fromJsonArray(byId.values.toList()));
-      } else {
-        throw Exception('Failed to load audiobooks');
       }
     } catch (e) {
       return Left(e.toString());

@@ -1,4 +1,5 @@
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
+import 'package:aradia/resources/services/local/local_book_metadata.dart';
 import 'package:hive/hive.dart';
 import 'package:aradia/resources/models/local_audiobook.dart';
 import 'package:aradia/utils/app_logger.dart';
@@ -31,7 +32,7 @@ class LocalAudiobookService {
         final map = Map<String, dynamic>.from(box.get(key));
         audiobooks.add(LocalAudiobook.fromMap(map));
       }
-      return audiobooks;
+      return LocalBookMetadata.apply(audiobooks);
     } catch (e) {
       AppLogger.error('Error getting audiobooks from Hive: $e');
       return [];
@@ -107,6 +108,8 @@ class LocalAudiobookService {
 
   /// Clear all audiobook caches (useful when changing root folder)
   static Future<void> clearAllCaches() async {
+    MediaHelper.clearMetadataCache();
+    await (await Hive.openBox('local_chapters_box')).clear();
     try {
       // Clear file cache
       await clearFileCache();
@@ -129,7 +132,7 @@ class LocalAudiobookService {
       for (final a in scanned) {
         await box.put(a.id, a.toMap());
       }
-      return scanned;
+      return LocalBookMetadata.apply(scanned);
     } catch (e) {
       AppLogger.error('Error refreshing audiobooks: $e');
       return [];
@@ -171,7 +174,7 @@ class LocalAudiobookService {
         }
         AppLogger.info('Saved ${scanned.length} audiobooks to Hive');
 
-        return scanned;
+        return LocalBookMetadata.apply(scanned);
       }
 
       // Compare file lists to detect changes
@@ -277,7 +280,7 @@ class LocalAudiobookService {
       await saveScannedFiles(currentFiles);
 
       // Return all audiobooks (updated + unchanged)
-      return audiobookMap.values.toList();
+      return LocalBookMetadata.apply(audiobookMap.values.toList());
     } catch (e) {
       AppLogger.error('Error in smart refresh: $e');
       // Fallback to full scan
@@ -629,7 +632,7 @@ class LocalAudiobookService {
     // Save the scanned file list to cache
     await saveScannedFiles(allFilesInsideRootFolder);
 
-    return allAudiobooks;
+    return LocalBookMetadata.apply(allAudiobooks);
   }
 
   /// LOGIC FOR PROCESSING LEVEL 0 AUDIOBOOKS

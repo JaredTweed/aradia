@@ -45,7 +45,7 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
       await _loadAudiobooks();
     }
 
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _loadRootFolderWithRefresh() async {
@@ -60,7 +60,7 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
       await _refreshAudiobooks();
     }
 
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _loadAudiobooks() async {
@@ -71,6 +71,7 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
         AppLogger.info(
             'Audiobook: ${audiobook.title} by ${audiobook.author} ${audiobook.coverImagePath}');
       }
+      if (!mounted) return;
       setState(() {
         audiobooks = loadedAudiobooks;
       });
@@ -84,12 +85,11 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
         );
       }
     }
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _selectRootFolder() async {
     try {
-      Saf.releasePersistedPermissions();
       bool? isGranted = await Saf.getDynamicDirectoryPermission();
       if (isGranted == true) {
         List<String>? persistedDirectories =
@@ -98,12 +98,14 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
           String selectedDirectory = persistedDirectories.last;
 
           await LocalAudiobookService.setRootFolderPath(selectedDirectory);
+          if (!mounted) return;
           setState(() {
             rootFolderPath = selectedDirectory;
           });
 
           // Clear all caches for the new folder and load audiobooks
           await LocalAudiobookService.clearAllCaches();
+          if (!mounted) return;
           setState(() => isLoading = true);
           await _refreshAudiobooks();
 
@@ -160,6 +162,7 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
         AppLogger.info(
             'Audiobook: ${audiobook.title} by ${audiobook.author} ${audiobook.coverImagePath}');
       }
+      if (!mounted) return;
       setState(() {
         audiobooks = loadedAudiobooks;
       });
@@ -174,7 +177,7 @@ class _LocalImportsSectionState extends State<LocalImportsSection> {
         );
       }
     }
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   @override

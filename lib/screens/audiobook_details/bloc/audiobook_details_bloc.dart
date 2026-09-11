@@ -5,6 +5,7 @@ import 'package:bloc/bloc.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hive/hive.dart';
 import 'package:aradia/resources/archive_api.dart';
+import 'package:aradia/resources/services/local/local_book_library.dart';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:meta/meta.dart';
@@ -49,12 +50,16 @@ class AudiobookDetailsBloc
     AppLogger.debug('isLocal: $isLocal');
     Either<String, List<AudiobookFile>> audiobookFiles;
     try {
-      if (isDownload) {
+      if (isLocal) {
+        audiobookFiles =
+            Right(await LocalBookLibrary.filesForId(id, fallback: event.files));
+      } else if (isDownload) {
         AppLogger.debug('fetching audiobook files from downloaded files');
         audiobookFiles = await AudiobookFile.fromDownloadedFiles(id);
-      } else if (isLocal) {
-        AppLogger.debug('fetching audiobook files from local files');
-        audiobookFiles = await AudiobookFile.fromLocalFiles(id);
+        if (audiobookFiles.isLeft() ||
+            audiobookFiles.getOrElse((_) => []).isEmpty) {
+          audiobookFiles = await ArchiveApi().getAudiobookFiles(id);
+        }
       } else {
         AppLogger.debug('fetching audiobook files from api');
         audiobookFiles = await ArchiveApi().getAudiobookFiles(id);

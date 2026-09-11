@@ -265,6 +265,9 @@ Future<String?> getMappedCoverImage(String key) async {
   if (mapped == null) return null;
 
   final normalized = decodePath(mapped);
+  if (normalized.startsWith('https://') || normalized.startsWith('http://')) {
+    return normalized;
+  }
   final f = File(normalized);
   if (await f.exists()) return f.path;
 
@@ -282,22 +285,10 @@ Future<void> mapCoverImage(String key, String coverImagePath) async {
   coverArtBus.emit(key); // notify listeners
 }
 
-/// Remove a mapping; if it points to a local file under our control, delete it.
+/// Remove only the mapping: images can be user-owned or shared by several books.
 Future<void> removeCoverMapping(String key) async {
   if (key.isEmpty) return;
   final store = CoverImageStore();
-  final path = await store.get(key);
-  if (path != null) {
-    final local = asLocalPath(path);
-    if (local != null) {
-      final f = File(local);
-      if (await f.exists()) {
-        try {
-          await f.delete();
-        } catch (_) {}
-      }
-    }
-  }
   await store.delete(key);
   _coverCache.remove(key);
   coverArtBus.emit(key); // notify listeners

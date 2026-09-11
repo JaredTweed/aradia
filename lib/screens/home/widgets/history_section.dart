@@ -1,5 +1,6 @@
 // lib/screens/home/widgets/history_section.dart
 import 'package:aradia/resources/models/audiobook_file.dart';
+import 'package:aradia/utils/book_navigation.dart';
 import 'package:aradia/resources/models/history_of_audiobook.dart';
 import 'package:aradia/resources/services/audio_handler_provider.dart';
 import 'package:aradia/resources/services/local/cover_image_service.dart';
@@ -276,6 +277,16 @@ class _HistorySectionState extends State<HistorySection> {
                     ),
                   ),
                   Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton.filledTonal(
+                      tooltip: 'Book details and chapters',
+                      onPressed: () => openBookDetails(
+                          context, item.audiobook, item.audiobookFiles),
+                      icon: const Icon(Icons.more_horiz),
+                    ),
+                  ),
+                  Positioned(
                     bottom: 8,
                     left: 8,
                     right: 8,
@@ -339,7 +350,7 @@ class _HistorySectionState extends State<HistorySection> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    'Track ${item.index + 1}',
+                    'Chapter ${item.index + 1}',
                     style: GoogleFonts.ubuntu(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,

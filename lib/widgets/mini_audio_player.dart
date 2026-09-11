@@ -41,18 +41,6 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
     weSlideController = Provider.of<WeSlideController>(context, listen: false);
   }
 
-  Widget _buildSliderIndicator() {
-    return Container(
-      width: 40,
-      height: 4,
-      margin: const EdgeInsets.only(top: 8, bottom: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-        borderRadius: BorderRadius.circular(2),
-      ),
-    );
-  }
-
   // Helper to display cover art safely for local or remote
   Widget _coverImage(MediaItem mediaItem) {
     final art = mediaItem.artUri;
@@ -101,7 +89,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
     final footerHeight = keyboardOpen ? 0.0 : widget.bottomNavBarSize;
     final footer =
         keyboardOpen ? const SizedBox.shrink() : widget.bottomNavigationBar;
-    final panelMin = keyboardOpen ? 0.0 : (80 + widget.bottomNavBarSize);
+    final panelMin = keyboardOpen ? 0.0 : (68 + widget.bottomNavBarSize);
 
     return WeSlide(
       controller: weSlideController,
@@ -114,11 +102,10 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
       panelHeader: Offstage(
         offstage: keyboardOpen,
         child: Container(
-          height: 80,
+          height: 68,
           color: Theme.of(context).colorScheme.surfaceContainerHigh,
           child: Column(
             children: [
-              Center(child: _buildSliderIndicator()),
               Expanded(
                 child: StreamBuilder<MediaItem?>(
                   stream: handler.mediaItem,

@@ -19,36 +19,58 @@ class ChapterCue {
 /// 3) MP4 chapter text track (tx3g) fallback
 class ChapterParser {
   static Future<List<ChapterCue>> parseFile(File file) async {
-    final lower = file.path.toLowerCase();
-    final bytes = await file.readAsBytes();
-    if (bytes.length < 10) return const [];
-
-    // MP3: ID3 at the head
-    if (_startsWith(bytes, [0x49, 0x44, 0x33])) {
-      final mp3 = _parseMp3Id3Chapters(bytes);
-      if (mp3.isNotEmpty) return mp3;
+    final reader = await file.open();
+    try {
+      final header = await reader.read(10);
+      if (header.length < 10) return const [];
+      if (_startsWith(header, [0x49, 0x44, 0x33])) {
+        final size = 10 + _syncsafeToInt(header.sublist(6, 10));
+        if (size > 32 * 1024 * 1024 || size > await reader.length()) {
+          return const [];
+        }
+        await reader.setPosition(0);
+        return _parseMp3Id3Chapters(await reader.read(size));
+      }
+    } finally {
+      await reader.close();
     }
+    // Skip the audio payload, which may be gigabytes. Only metadata and chapter
+    // text samples are needed to build the chapter list.
+    final moov = await _readMoov(file);
+    if (moov == null) return const [];
+    final chpl = _parseMp4Chpl(moov);
+    return chpl.isNotEmpty ? chpl : _Mp4ChapterTrack.extract(file, moov);
+  }
 
-    // MP4-family
-    if (lower.endsWith('.m4b') ||
-        lower.endsWith('.m4a') ||
-        lower.endsWith('.mp4')) {
-      // 1) Nero chpl
-      final chpl = _parseMp4Chpl(bytes);
-      if (chpl.isNotEmpty) return chpl;
-      // 2) Chapter track fallback
-      final trackCues = await _Mp4ChapterTrack.extract(file);
-      if (trackCues.isNotEmpty) return trackCues;
-      return const [];
+  static Future<Uint8List?> _readMoov(File file) async {
+    final reader = await file.open();
+    try {
+      final length = await reader.length();
+      var offset = 0;
+      while (offset + 8 <= length) {
+        await reader.setPosition(offset);
+        final header = await reader.read(16);
+        if (header.length < 8) return null;
+        var size = _u32(header, 0);
+        final type = latin1.decode(header.sublist(4, 8));
+        if (size == 1) {
+          if (header.length < 16) return null;
+          size = _u64(header, 8);
+        } else if (size == 0) {
+          size = length - offset;
+        }
+        if (size < 8 || offset + size > length) return null;
+        if (type == 'moov') {
+          if (size > 64 * 1024 * 1024) return null;
+          await reader.setPosition(offset);
+          return await reader.read(size);
+        }
+        offset += size;
+      }
+      return null;
+    } finally {
+      await reader.close();
     }
-
-    // Last chance sniffers for unknown extensions
-    final mp3 = _parseMp3Id3Chapters(bytes);
-    if (mp3.isNotEmpty) return mp3;
-    final chpl = _parseMp4Chpl(bytes);
-    if (chpl.isNotEmpty) return chpl;
-    final trackCues = await _Mp4ChapterTrack.extract(file);
-    return trackCues;
   }
 
   // ───────────── MP3: ID3v2 CHAP frames ─────────────
@@ -145,8 +167,13 @@ class ChapterParser {
         if (type == 'chpl') {
           final b = data.sublist(boxStart, boxEnd);
           if (b.length >= 5) {
-            final count = b[4];
-            int i = 5;
+            final countOffset = b[0] == 0 ? 4 : 8;
+            if (b.length <= countOffset) {
+              off += size;
+              continue;
+            }
+            final count = b[countOffset];
+            int i = countOffset + 1;
             for (int n = 0; n < count; n++) {
               if (i + 9 > b.length) break;
               final time = _u64(b, i);
@@ -158,7 +185,8 @@ class ChapterParser {
                   utf8.decode(b.sublist(i, i + len), allowMalformed: true);
               i += len;
 
-              final ms = (time > 0x7FFFFFFF) ? (time ~/ 1000) : time; // guard
+              // Nero chapter timestamps use a 1/10,000,000 second time base.
+              final ms = time ~/ 10000;
               result.add(ChapterCue(
                 startMs: ms,
                 title: title.isNotEmpty ? title : 'Chapter ${n + 1}',
@@ -278,12 +306,11 @@ class ChapterParser {
 
 /// Internal MP4 chapter-track reader (tx3g). Only used if 'chpl' is absent.
 class _Mp4ChapterTrack {
-  static Future<List<ChapterCue>> extract(File f) async {
+  static Future<List<ChapterCue>> extract(File f, Uint8List root) async {
     if (!await f.exists()) return const [];
     final raf = await f.open();
     try {
       final len = await raf.length();
-      final root = await raf.read(len);
       final ctx = _Ctx(root);
 
       _walk(ctx, 0, root.length, []);
@@ -326,9 +353,11 @@ class _Mp4ChapterTrack {
             sampleIndex++;
             continue;
           }
-          if (offset + size > root.length) return cues;
-
-          final sample = root.sublist(offset, offset + size);
+          if (offset < 0 || offset + size > len || size > 1024 * 1024) {
+            return cues;
+          }
+          await raf.setPosition(offset);
+          final sample = await raf.read(size);
           String title = '';
           if (sample.length >= 2) {
             final textLen = (sample[0] << 8) | sample[1];

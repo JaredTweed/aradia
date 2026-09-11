@@ -28,9 +28,6 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
       // bump generation so any in-flight old requests are ignored
       _reqGen++;
       emit(HomeInitial());
-      add(FetchLatestAudiobooks(1, 20));
-      add(FetchPopularAudiobooks(1, 20));
-      add(FetchPopularThisWeekAudiobooks(1, 20));
     });
 
     _langSub = AppEvents.languagesChanged.stream.listen((_) {
@@ -39,54 +36,60 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
   }
 
   Future<void> _onFetchLatestAudiobooks(
-      FetchLatestAudiobooks event,
-      Emitter<HomeState> emit,
-      ) async {
+    FetchLatestAudiobooks event,
+    Emitter<HomeState> emit,
+  ) async {
     await _fetchAudiobooks(
       page: event.page,
       rows: event.rows,
-      fetchFunction: () => _archiveApi.getLatestAudiobook(event.page, event.rows),
+      fetchFunction: () =>
+          _archiveApi.getLatestAudiobook(event.page, event.rows),
       loadingState: LatestAudiobooksFetchingLoadingState(),
-      successState: (audiobooks) => LatestAudiobooksFetchingSuccessState(audiobooks),
+      successState: (audiobooks) =>
+          LatestAudiobooksFetchingSuccessState(audiobooks),
       failureState: LatestAudiobooksFetchingFailedState(),
       emit: emit,
     );
   }
 
   Future<void> _onFetchPopularAudiobooks(
-      FetchPopularAudiobooks event,
-      Emitter<HomeState> emit,
-      ) async {
+    FetchPopularAudiobooks event,
+    Emitter<HomeState> emit,
+  ) async {
     await _fetchAudiobooks(
       page: event.page,
       rows: event.rows,
-      fetchFunction: () => _archiveApi.getMostDownloadedEverAudiobook(event.page, event.rows),
+      fetchFunction: () =>
+          _archiveApi.getMostDownloadedEverAudiobook(event.page, event.rows),
       loadingState: PopularAudiobooksFetchingLoadingState(),
-      successState: (audiobooks) => PopularAudiobooksFetchingSuccessState(audiobooks),
+      successState: (audiobooks) =>
+          PopularAudiobooksFetchingSuccessState(audiobooks),
       failureState: PopularAudiobooksFetchingFailedState(),
       emit: emit,
     );
   }
 
   Future<void> _onFetchPopularThisWeekAudiobooks(
-      FetchPopularThisWeekAudiobooks event,
-      Emitter<HomeState> emit,
-      ) async {
+    FetchPopularThisWeekAudiobooks event,
+    Emitter<HomeState> emit,
+  ) async {
     await _fetchAudiobooks(
       page: event.page,
       rows: event.rows,
-      fetchFunction: () => _archiveApi.getMostViewedWeeklyAudiobook(event.page, event.rows),
+      fetchFunction: () =>
+          _archiveApi.getMostViewedWeeklyAudiobook(event.page, event.rows),
       loadingState: PopularAudiobooksOfWeekFetchingLoadingState(),
-      successState: (audiobooks) => PopularAudiobooksOfWeekFetchingSuccessState(audiobooks),
+      successState: (audiobooks) =>
+          PopularAudiobooksOfWeekFetchingSuccessState(audiobooks),
       failureState: PopularAudiobooksOfWeekFetchingFailedState(),
       emit: emit,
     );
   }
 
   Future<void> _onFetchAudiobooksByGenre(
-      FetchAudiobooksByGenre event,
-      Emitter<HomeState> emit,
-      ) async {
+    FetchAudiobooksByGenre event,
+    Emitter<HomeState> emit,
+  ) async {
     await _fetchAudiobooks(
       page: event.page,
       rows: event.rows,
@@ -97,7 +100,8 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
         event.sortBy,
       ),
       loadingState: GenreAudiobooksFetchingLoadingState(),
-      successState: (audiobooks) => GenreAudiobooksFetchingSuccessState(audiobooks),
+      successState: (audiobooks) =>
+          GenreAudiobooksFetchingSuccessState(audiobooks),
       failureState: GenreAudiobooksFetchingFailedState(),
       emit: emit,
     );
@@ -115,10 +119,7 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     // capture the generation at the time this request starts
     final localGen = _reqGen;
 
-    if (page == 1) {
-      // Only show loading for page 1; if gen changed meanwhile, this is harmless
-      emit(loadingState);
-    }
+    emit(loadingState);
 
     try {
       final result = await fetchFunction();
@@ -127,18 +128,14 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
       if (localGen != _reqGen) return;
 
       result.fold(
-            (_) {
-          if (page == 1) {
-            emit(failureState);
-          }
+        (_) {
+          emit(failureState);
         },
-            (audiobooks) => emit(successState(audiobooks)),
+        (audiobooks) => emit(successState(audiobooks)),
       );
     } catch (_) {
       if (localGen != _reqGen) return; // also ignore late errors
-      if (page == 1) {
-        emit(failureState);
-      }
+      emit(failureState);
     }
   }
 

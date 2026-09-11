@@ -24,11 +24,13 @@ class AudiobookDetails extends StatefulWidget {
   final Audiobook audiobook;
   final bool isDownload;
   final bool isLocal;
+  final List<AudiobookFile>? initialFiles;
   const AudiobookDetails({
     super.key,
     required this.audiobook,
     this.isDownload = false,
     this.isLocal = false,
+    this.initialFiles,
   });
 
   @override
@@ -67,6 +69,7 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
       widget.audiobook.id,
       widget.isDownload,
       widget.isLocal,
+      files: widget.initialFiles,
     ));
     playingAudiobookDetailsBox = Hive.box('playing_audiobook_details_box');
 
@@ -214,24 +217,28 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             // Improved by Nadia
-                            if (!widget.isLocal && !widget.isDownload)
-                              SizedBox(
-                                width: 60,
-                                height: 60,
-                                child: Center(
-                                  child: DownloadButton(
-                                    audiobook: widget.audiobook,
-                                    audiobookFiles: state.audiobookFiles,
-                                  ),
+                            if (!widget.isLocal)
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                                DownloadButton(
+                                  audiobook: widget.audiobook,
+                                  audiobookFiles: state.audiobookFiles,
+                                  onChanged: widget.isDownload
+                                      ? () => _audiobookDetailsBloc.add(
+                                          FetchAudiobookDetails(
+                                              widget.audiobook.id, true, false))
+                                      : null,
                                 ),
+                                const Text('Manage downloads',
+                                    style: TextStyle(color: Colors.white)),
+                              ]),
+                            if (!widget.isLocal)
+                              Container(
+                                height: 40,
+                                width: 1,
+                                color: Colors.white.withValues(alpha: 0.5),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 8),
                               ),
-                            // Improved divider
-                            Container(
-                              height: 40,
-                              width: 1,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
                             // Imporved by Nadia
                             SizedBox(
                               width: 60,
@@ -250,13 +257,21 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                                                       widget.audiobook.id)
                                               : null;
                                           try {
+                                            final resumeIndex =
+                                                history?.indexIn(
+                                                        state.audiobookFiles) ??
+                                                    -1;
                                             await audioHandlerProvider
                                                 .audioHandler
                                                 .initSongs(
                                               state.audiobookFiles,
                                               widget.audiobook,
-                                              history?.index ?? 0,
-                                              history?.position ?? 0,
+                                              resumeIndex >= 0
+                                                  ? resumeIndex
+                                                  : 0,
+                                              resumeIndex >= 0
+                                                  ? history!.position
+                                                  : 0,
                                             );
                                             await audioHandlerProvider
                                                 .audioHandler
@@ -290,18 +305,21 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                       mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Description',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                        if (DescriptionText.hasDescription(
+                            widget.audiobook.description)) ...[
+                          const Text(
+                            'Description',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        DescriptionText(
-                          description: widget.audiobook.description ?? 'N/A',
-                        ),
-                        const SizedBox(height: 10),
+                          const SizedBox(height: 10),
+                          DescriptionText(
+                            description: widget.audiobook.description ?? 'N/A',
+                          ),
+                          const SizedBox(height: 10),
+                        ],
                         Container(
                           color: Theme.of(context).scaffoldBackgroundColor,
                           child: Column(
@@ -309,7 +327,7 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Audio Files",
+                                "Chapters",
                                 style: GoogleFonts.ubuntu(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -334,10 +352,8 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                                         ),
                                       ),
                                       subtitle: Text(
-                                        state.audiobookFiles[index].length !=
-                                                null
-                                            ? "${(state.audiobookFiles[index].length! / 60).floor()} minutes"
-                                            : 'N/A',
+                                        state.audiobookFiles[index]
+                                            .durationLabel,
                                         style: GoogleFonts.ubuntu(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w500,
@@ -356,13 +372,14 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Subjects',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+                        if (widget.audiobook.subject?.isNotEmpty == true)
+                          const Text(
+                            'Subjects',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
                         Wrap(
                           spacing: 5,
                           children: List.generate(

@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:aradia/widgets/low_and_high_image.dart';
 
 import 'package:aradia/resources/designs/app_colors.dart';
 import 'package:aradia/resources/models/audiobook.dart';
+import 'package:aradia/resources/models/audiobook_file.dart';
+import 'package:aradia/utils/book_navigation.dart';
 import 'package:aradia/resources/services/audio_handler_provider.dart';
-import 'package:aradia/resources/services/character_service.dart';
 import 'package:aradia/resources/services/my_audio_handler.dart';
 import 'package:aradia/screens/audiobook_player/widgets/track_section_dialog.dart';
 import 'package:aradia/utils/optimized_timer.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -31,12 +31,11 @@ class AudiobookPlayer extends StatefulWidget {
 class _AudiobookPlayerState extends State<AudiobookPlayer> {
   late AudioHandlerProvider audioHandlerProvider;
   late Box<dynamic> playingAudiobookDetailsBox;
-  late CharacterService characterService;
 
   // variables for timer and skip silence
   late final OptimizedTimer _sleepTimer;
   StreamSubscription<PositionData>? _positionSubscription;
-  bool _isEndOfTrackTimerActive = false;
+  bool _isEndOfChapterTimerActive = false;
 
   // ValueNotifier for skip silence to prevent unnecessary rebuilds
   final ValueNotifier<bool> _skipSilenceNotifier = ValueNotifier<bool>(false);
@@ -50,12 +49,6 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
     super.initState();
     playingAudiobookDetailsBox = Hive.box('playing_audiobook_details_box');
     _sleepTimer = OptimizedTimer();
-    characterService = CharacterService();
-    _initializeCharacterService();
-  }
-
-  Future<void> _initializeCharacterService() async {
-    await characterService.init();
   }
 
   @override
@@ -77,19 +70,19 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
 
   Future<void> startTimer(Duration duration) async {
     _sleepTimer.cancel();
-    _isEndOfTrackTimerActive = false;
+    _isEndOfChapterTimerActive = false;
     await _positionSubscription?.cancel();
     _positionSubscription = null;
     if (!mounted) return;
-    if (duration == TimerDurations.endOfTrack) {
-      _startEndOfTrackTimer();
+    if (duration == TimerDurations.endOfChapter) {
+      _startEndOfChapterTimer();
       return;
     }
     _sleepTimer.start(duration: duration, onExpired: _onTimerExpired);
   }
 
   void _onTimerExpired() {
-    _isEndOfTrackTimerActive = false;
+    _isEndOfChapterTimerActive = false;
     _positionSubscription?.cancel();
     _positionSubscription = null;
     audioHandlerProvider.audioHandler.pause();
@@ -101,12 +94,12 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
     }
   }
 
-  void _startEndOfTrackTimer() {
+  void _startEndOfChapterTimer() {
     final handler = audioHandlerProvider.audioHandler;
     final targetIndex = handler.playbackState.value.queueIndex;
-    _isEndOfTrackTimerActive = true;
+    _isEndOfChapterTimerActive = true;
     _positionSubscription = handler.getPositionStream().listen((data) {
-      if (!_isEndOfTrackTimerActive) return;
+      if (!_isEndOfChapterTimerActive) return;
       // Catch automatic chapter transitions as well as reaching the final chapter's end.
       if (handler.playbackState.value.queueIndex != targetIndex ||
           (data.duration > Duration.zero && data.position >= data.duration)) {
@@ -144,7 +137,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
 
   void cancelTimer() {
     _sleepTimer.cancel();
-    _isEndOfTrackTimerActive = false;
+    _isEndOfChapterTimerActive = false;
     _positionSubscription?.cancel();
     _positionSubscription = null;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -188,7 +181,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                     context, "45 min", TimerDurations.fortyFiveMinutes),
                 _timerButton(context, "60 min", TimerDurations.oneHour),
                 _timerButton(context, "90 min", TimerDurations.ninetyMinutes),
-                _endOfTrackTimerButton(context),
+                _endOfChapterTimerButton(context),
               ],
             ),
             const SizedBox(height: 10),
@@ -217,7 +210,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
     );
   }
 
-  ElevatedButton _endOfTrackTimerButton(BuildContext context) {
+  ElevatedButton _endOfChapterTimerButton(BuildContext context) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primaryColor.withValues(alpha: 0.8),
@@ -227,7 +220,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
         ),
       ),
       onPressed: () async {
-        await startTimer(TimerDurations.endOfTrack);
+        await startTimer(TimerDurations.endOfChapter);
         if (context.mounted) Navigator.pop(context);
       },
       child: const Row(
@@ -235,7 +228,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
         children: [
           Icon(Icons.skip_next, size: 16),
           SizedBox(width: 4),
-          Text('End of Track'),
+          Text('End of Chapter'),
         ],
       ),
     );
@@ -243,47 +236,14 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
 
   // -------- Artwork helpers (handle local file:// and remote http/https) -----
 
-  Widget _artThumb(Uri? art, {double size = 50}) {
-    final isLocal = art != null && art.scheme == 'file';
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: isLocal
-            ? Image.file(
-                File(art.toFilePath()),
-                errorBuilder: (_, __, ___) => const Icon(Icons.headphones),
-                fit: BoxFit.cover,
-              )
-            : CachedNetworkImage(
-                imageUrl: art?.toString() ?? '',
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) =>
-                    const Icon(Icons.broken_image, color: Colors.white54),
-              ),
-      ),
-    );
-  }
-
   Widget _artLarge(Uri? art, {double size = 250}) {
-    final isLocal = art != null && art.scheme == 'file';
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: isLocal
-          ? Image.file(
-              File(art.toFilePath()),
-              fit: BoxFit.cover,
-              height: size,
-              width: size,
-            )
-          : CachedNetworkImage(
-              imageUrl: art?.toString() ?? '',
-              fit: BoxFit.cover,
-              height: size,
-              width: size,
-              errorWidget: (_, __, ___) => const Icon(Icons.error),
-            ),
+      child: LowAndHighImage(
+          lowQImage: art?.toString() ?? '',
+          highQImage: null,
+          height: size,
+          width: size),
     );
   }
 
@@ -323,70 +283,44 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
         final filesDyn = box.get('audiobookFiles') as List?;
         final isSingleTrack = (filesDyn?.length ?? 0) <= 1;
 
-        // Prefer author from our stored Audiobook; fall back to MediaItem.artist.
-        String? authorFromBox;
-        final audiobookMap = box.get('audiobook');
-        if (audiobookMap != null) {
-          authorFromBox = Audiobook.fromMap(
-            Map<String, dynamic>.from(audiobookMap as Map),
-          ).author;
-        }
-
         // Titles to render in the app bar and in the large title below the cover.
         final headerTitle = isSingleTrack
             ? (mediaItem.album ?? mediaItem.title)
             : mediaItem.title;
-        final headerSubtitle = isSingleTrack
-            ? (authorFromBox ?? mediaItem.artist ?? 'Unknown')
-            : (mediaItem.artist ?? 'Unknown');
         final contentTitle = headerTitle; // keep the big center title in sync
 
         return Scaffold(
           appBar: AppBar(
             backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             foregroundColor: Theme.of(context).colorScheme.onSurface,
-            title: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _artThumb(mediaItem.artUri, size: 45),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        headerTitle,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        maxLines: 1,
-                      ),
-                      Text(
-                        headerSubtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        maxLines: 1,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            automaticallyImplyLeading: false,
+            leading: IconButton(
+              tooltip: 'Collapse player',
+              icon: const Icon(Icons.expand_more),
+              onPressed: () => context.read<WeSlideController>().hide(),
             ),
             actions: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  IconButton(
+                    tooltip: 'Book details and downloads',
+                    icon: const Icon(Icons.more_horiz),
+                    onPressed: () {
+                      final saved = box.get('audiobook');
+                      if (saved is! Map) return;
+                      final files = (box.get('audiobookFiles') as List? ?? [])
+                          .map((value) => AudiobookFile.fromMap(value as Map))
+                          .toList();
+                      openBookDetails(context, Audiobook.fromMap(saved), files);
+                    },
+                  ),
                   ChromeCastButton(
                     chromeCastService:
                         audioHandlerProvider.audioHandler.chromeCastService,
                   ),
                   IconButton(
+                    tooltip: 'Equalizer',
                     onPressed: () {
                       _showEqualizerDialog(context);
                     },
@@ -396,40 +330,20 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Chapters',
                     onPressed: () {
                       _showTrackSelectionDialog(context);
                     },
-                    icon: Icon(Icons.list, color: Colors.white, size: 30),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      Provider.of<WeSlideController>(context, listen: false)
-                          .hide();
-                    },
-                    icon: const Icon(Icons.expand_more,
-                        color: Colors.white, size: 30),
+                    icon: Icon(Icons.list, size: 30),
                   ),
                 ],
               ),
             ],
           ),
           body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: Theme.of(context).brightness == Brightness.dark
-                    ? [
-                        const Color(0xFF1A1A1A),
-                        const Color(0xFF0D0D0D),
-                      ]
-                    : [
-                        const Color(0xFFF8F9FA),
-                        const Color(0xFFE9ECEF),
-                        const Color(0xFFDEE2E6),
-                      ],
-              ),
-            ),
+            width: double.infinity,
+            height: double.infinity,
+            color: Theme.of(context).scaffoldBackgroundColor,
             child: SafeArea(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
@@ -454,28 +368,16 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? Colors.black.withValues(alpha: 0.6)
-                                  : Colors.black.withValues(alpha: 0.15),
-                              spreadRadius: 0,
-                              blurRadius: 30,
-                              offset: const Offset(0, 15),
-                            ),
-                            BoxShadow(
-                              color: Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? Colors.black.withValues(alpha: 0.3)
-                                  : Colors.black.withValues(alpha: 0.08),
-                              spreadRadius: 0,
-                              blurRadius: 60,
-                              offset: const Offset(0, 30),
-                            ),
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4))
                           ],
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(24),
-                          child: _artLarge(mediaItem.artUri, size: 280),
+                          child: _artLarge(mediaItem.artUri,
+                              size: (MediaQuery.sizeOf(context).width - 64)
+                                  .clamp(160.0, 280.0)),
                         ),
                       ),
                     ),
@@ -499,8 +401,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                               height: 1.2,
                             ),
                             textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                           ),
                           if (!isSingleTrack) ...[
                             const SizedBox(height: 8),
@@ -515,8 +416,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                                     : AppColors.subtitleTextColorLight,
                                 height: 1.3,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              softWrap: true,
                             ),
                           ],
                           const SizedBox(height: 6),
@@ -532,8 +432,8 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                                   : AppColors.subtitleTextColorLight,
                               height: 1.4,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            softWrap: true,
                           ),
                         ],
                       ),
@@ -567,23 +467,9 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.black.withValues(alpha: 0.4)
-                                    : Colors.black.withValues(alpha: 0.1),
-                            spreadRadius: 0,
-                            blurRadius: 25,
-                            offset: const Offset(0, 10),
-                          ),
-                          BoxShadow(
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.black.withValues(alpha: 0.2)
-                                    : Colors.black.withValues(alpha: 0.05),
-                            spreadRadius: 0,
-                            blurRadius: 40,
-                            offset: const Offset(0, 20),
-                          ),
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4))
                         ],
                       ),
                       child: ValueListenableBuilder<bool>(

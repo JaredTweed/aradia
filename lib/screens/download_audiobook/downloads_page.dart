@@ -117,6 +117,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         builder: (context, Box<dynamic> box, _) {
           final allStatuses = box.values
               .whereType<Map<dynamic, dynamic>>() // Ensure we only get maps
+              .where((status) => status['audiobookId'] != null)
               .toList();
 
           // Sort by a timestamp if available, otherwise by title
@@ -221,8 +222,11 @@ class _DownloadsPageState extends State<DownloadsPage> {
                 const SizedBox(height: 16),
               ],
               if (completedDownloads.isNotEmpty) ...[
-                _buildSectionHeader('Completed', completedDownloads.length,
-                    context, Ionicons.checkmark_circle_outline),
+                _buildSectionHeader(
+                    'Available offline',
+                    completedDownloads.length,
+                    context,
+                    Ionicons.checkmark_circle_outline),
                 ...completedDownloads.map((status) => _buildDownloadItem(
                       context,
                       status,
@@ -458,13 +462,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
                           ? Padding(
                               padding: const EdgeInsets.only(top: 4.0),
                               child: Text(
-                                'Downloaded on $formattedDate',
+                                '${status['downloadedCount'] == null ? 'Downloaded' : '${status['downloadedCount']}${status['totalCount'] == null ? '' : ' of ${status['totalCount']}'} chapters available offline'} · $formattedDate',
                                 style: TextStyle(
                                     color: Colors.grey.shade600, fontSize: 12),
                               ),
                             )
                           : null,
-              onTap: isCompleted
+              onTap: isCompleted || (status['downloadedCount'] as int? ?? 0) > 0
                   ? () => _openDownloadedAudiobook(
                       context, audiobookId, audiobookTitle)
                   : null,
@@ -517,7 +521,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           icon: const Icon(Ionicons.refresh_outline),
           tooltip: 'Retry',
           onPressed: onRetry,
-          color: Colors.blueAccent));
+          color: Theme.of(context).colorScheme.primary));
     }
 
     if (actions.isEmpty) {

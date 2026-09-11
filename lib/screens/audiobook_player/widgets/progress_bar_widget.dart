@@ -36,7 +36,7 @@ class ProgressBarWidget extends StatelessWidget {
               },
             ),
             Text(
-              "Time Remaining: ${remainingTime.inMinutes}:${(remainingTime.inSeconds % 60).toString().padLeft(2, '0')}",
+              'Remaining: ${remainingTime.inHours > 0 ? '${remainingTime.inHours}h ${remainingTime.inMinutes % 60}m' : '${remainingTime.inMinutes}m ${remainingTime.inSeconds % 60}s'}',
               style: const TextStyle(fontSize: 12),
             ),
           ],

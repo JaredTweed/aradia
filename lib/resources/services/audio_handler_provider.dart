@@ -15,6 +15,9 @@ class AudioHandlerProvider extends ChangeNotifier {
         androidNotificationChannelId: 'com.oseamiya.librivoxaudiobook',
         androidNotificationChannelName: 'Audio playback',
         androidNotificationOngoing: true,
+        androidNotificationIcon: 'drawable/ic_launcher_monochrome',
+        rewindInterval: Duration(seconds: 10),
+        fastForwardInterval: Duration(seconds: 30),
       ),
     );
     await _audioHandler.restoreIfNeeded();

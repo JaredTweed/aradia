@@ -3,6 +3,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:aradia/resources/models/audiobook.dart';
+import 'package:aradia/resources/archive_api.dart';
+import 'package:aradia/resources/models/local_audiobook.dart';
+import 'package:aradia/utils/media_helper.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/resources/models/history_of_audiobook.dart';
 import 'package:aradia/resources/services/local/cover_image_service.dart';
@@ -68,6 +71,7 @@ class MyAudioHandler extends BaseAudioHandler {
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription<Duration?>? _durationSub;
 
   Future<void> _persistInstant() async {
     if (!_canPersistProgress || _isReinitializing) return;
@@ -127,6 +131,19 @@ class MyAudioHandler extends BaseAudioHandler {
     });
     _playingSub = _player.playingStream.listen((_) {
       _broadcastState(_player.playbackEvent);
+    });
+    _durationSub?.cancel();
+    _durationSub = _player.durationStream.listen((duration) {
+      if (_isReinitializing || duration == null || duration <= Duration.zero) {
+        return;
+      }
+      final index = _player.currentIndex;
+      if (index == null || index >= queue.value.length) return;
+      final items = [...queue.value];
+      if (items[index].duration == duration) return;
+      items[index] = items[index].copyWith(duration: duration);
+      queue.add(items);
+      mediaItem.add(items[index]);
     });
 
     // swap art immediately if the active audiobook’s cover mapping changes
@@ -200,6 +217,26 @@ class MyAudioHandler extends BaseAudioHandler {
     // Keep Hive "audiobook.lowQCoverImage" as-is; selector already updates it.
   }
 
+  Future<void> refreshBookMetadata(LocalAudiobook book) async {
+    if (_activeAudiobookId != MediaHelper.bookKeyForLocal(book)) return;
+    final artPath = await resolveCoverForLocal(book);
+    final rebuilt = queue.value
+        .map((item) => item.copyWith(
+              album: book.title,
+              artist: book.author,
+              artUri: _artUriFrom(artPath),
+            ))
+        .toList();
+    queue.add(rebuilt);
+    final index = _player.currentIndex;
+    if (index != null && index < rebuilt.length) mediaItem.add(rebuilt[index]);
+    final saved = playingAudiobookDetailsBox.get('audiobook');
+    if (saved is Map) {
+      await playingAudiobookDetailsBox.put('audiobook',
+          Map<String, dynamic>.from(saved)..['lowQCoverImage'] = artPath ?? '');
+    }
+  }
+
   Future<void> initSongs(List<AudiobookFile> files, Audiobook audiobook,
       int initialIndex, int positionInMilliseconds) {
     final operation = _pendingInitialization.then((_) => _initializeSongs(
@@ -216,6 +253,21 @@ class MyAudioHandler extends BaseAudioHandler {
     int initialIndex,
     int positionInMilliseconds,
   ) async {
+    if (audiobook.origin == 'download' && files.isNotEmpty) {
+      final current = files[initialIndex.clamp(0, files.length - 1)];
+      final local = asLocalPath(current.url);
+      if (local == null || !await File(local).exists()) {
+        final remote = await ArchiveApi().getAudiobookFiles(audiobook.id);
+        files = remote.fold(
+            (error) => throw StateError(
+                'This download was removed. Connect to the internet to stream it.'),
+            (value) => value);
+        final matching = files.indexWhere(
+            (file) => current.title != null && file.title == current.title);
+        initialIndex = matching >= 0 ? matching : (current.track ?? 1) - 1;
+        audiobook = audiobook.copyWith(origin: 'librivox');
+      }
+    }
     if (files.isEmpty ||
         files.any((file) => file.url == null || file.url!.isEmpty)) {
       throw ArgumentError('The audiobook has no playable audio files.');
@@ -275,6 +327,7 @@ class MyAudioHandler extends BaseAudioHandler {
           album: audiobook.title,
           title: song.title ?? '',
           artist: audiobook.author ?? 'Librivox',
+          duration: song.duration,
           artUri: art, // ← this can be file://... or https://...
           extras: {
             'url': song.url,
@@ -326,6 +379,13 @@ class MyAudioHandler extends BaseAudioHandler {
       );
 
       _listenForCurrentSongIndexChanges();
+      if (_player.duration != null && mediaItems.isNotEmpty) {
+        final items = [...queue.value];
+        items[safeIndex] =
+            items[safeIndex].copyWith(duration: _player.duration);
+        queue.add(items);
+        mediaItem.add(items[safeIndex]);
+      }
 
       // Only add to history once, after we have a settled start
       await historyOfAudiobook.addToHistory(
@@ -420,15 +480,26 @@ class MyAudioHandler extends BaseAudioHandler {
 
     // Controls shown in quick settings / notification
     final controls = <MediaControl>[
-      MediaControl.skipToPrevious,
+      const MediaControl(
+          androidIcon: 'drawable/ic_replay_10',
+          label: 'Back 10 seconds',
+          action: MediaAction.rewind),
       if (playing) MediaControl.pause else MediaControl.play,
-      MediaControl.stop,
-      MediaControl.skipToNext,
+      const MediaControl(
+          androidIcon: 'drawable/ic_forward_30',
+          label: 'Forward 30 seconds',
+          action: MediaAction.fastForward),
+      if (_player.hasNext)
+        MediaControl.custom(
+            androidIcon: 'drawable/audio_service_skip_next',
+            label: 'Next chapter',
+            name: 'nextChapter'),
     ];
 
     playbackState.add(
       playbackState.value.copyWith(
         controls: controls,
+        androidCompactActionIndices: const [0, 1, 2],
         systemActions: const {
           MediaAction.seek,
           MediaAction.seekForward,
@@ -511,10 +582,59 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   // ── AudioHandler overrides ────────────────────────────────────────────────
+  /// Remove deleted offline audio from the live queue as well as storage.
+  Future<void> downloadedChapterDeleted(String bookId, String path) async {
+    final saved = playingAudiobookDetailsBox.get('audiobook');
+    if (saved is! Map ||
+        saved['id'] != bookId ||
+        saved['origin'] != 'download') {
+      return;
+    }
+    final files =
+        (playingAudiobookDetailsBox.get('audiobookFiles') as List? ?? [])
+            .map((value) => AudiobookFile.fromMap(value as Map))
+            .toList();
+    if (!files.any((file) => asLocalPath(file.url) == path)) return;
+    final index = (_player.currentIndex ?? 0).clamp(0, files.length - 1);
+    final current = files[index];
+    final position = _player.position.inMilliseconds;
+    final wasPlaying = _player.playing;
+    final remaining =
+        files.where((file) => asLocalPath(file.url) != path).toList();
+    await pause();
+    if (remaining.isEmpty) {
+      await stop();
+      return;
+    }
+    final retainedIndex =
+        remaining.indexWhere((file) => file.url == current.url);
+    await initSongs(
+        remaining,
+        Audiobook.fromMap(saved),
+        retainedIndex >= 0
+            ? retainedIndex
+            : index.clamp(0, remaining.length - 1),
+        retainedIndex >= 0 ? position : 0);
+    if (wasPlaying && retainedIndex >= 0) await play();
+  }
+
   @override
   Future<void> play() async {
     await _pendingInitialization;
     await _restoreQueueFromBoxIfEmpty(); // only at cold start
+    final saved = playingAudiobookDetailsBox.get('audiobook');
+    final currentPath = asLocalPath(mediaItem.value?.extras?['url'] as String?);
+    if (saved is Map &&
+        saved['origin'] == 'download' &&
+        currentPath != null &&
+        !await File(currentPath).exists()) {
+      final files =
+          (playingAudiobookDetailsBox.get('audiobookFiles') as List? ?? [])
+              .map((value) => AudiobookFile.fromMap(value as Map))
+              .toList();
+      await initSongs(files, Audiobook.fromMap(saved),
+          _player.currentIndex ?? 0, _player.position.inMilliseconds);
+    }
 
     // Route to ChromeCast if connected
     if (_chromeCastService.isConnected) {
@@ -561,6 +681,9 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    final duration = mediaItem.value?.duration;
+    position = position < Duration.zero ? Duration.zero : position;
+    if (duration != null && position > duration) position = duration;
     // Route to ChromeCast if connected
     if (_chromeCastService.isConnected) {
       await _chromeCastService.seek(position);
@@ -594,6 +717,13 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   @override
+  Future<dynamic> customAction(String name,
+      [Map<String, dynamic>? extras]) async {
+    if (name == 'nextChapter') return skipToNext();
+    return super.customAction(name, extras);
+  }
+
+  @override
   Future<void> skipToPrevious() async {
     // Route to ChromeCast if connected
     if (_chromeCastService.isConnected) {
@@ -607,32 +737,23 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   // Map Android's seekForward/seekBackward to fast-forward/rewind
-  static const _ffAmount = Duration(seconds: 15);
+  static const _ffAmount = Duration(seconds: 30);
   static const _rwAmount = Duration(seconds: 10);
 
   @override
   Future<void> fastForward() async {
-    if (_chromeCastService.isConnected) {
-      final newPos = _chromeCastService.currentPosition + _ffAmount;
-      await _chromeCastService.seek(newPos);
-    } else {
-      final newPos = _player.position + _ffAmount;
-      await _player.seek(newPos);
-    }
-    _broadcastState(_player.playbackEvent);
+    await seek((_chromeCastService.isConnected
+            ? _chromeCastService.currentPosition
+            : _player.position) +
+        _ffAmount);
   }
 
   @override
   Future<void> rewind() async {
-    if (_chromeCastService.isConnected) {
-      final newPos = _chromeCastService.currentPosition - _rwAmount;
-      await _chromeCastService
-          .seek(newPos < Duration.zero ? Duration.zero : newPos);
-    } else {
-      final newPos = _player.position - _rwAmount;
-      await _player.seek(newPos < Duration.zero ? Duration.zero : newPos);
-    }
-    _broadcastState(_player.playbackEvent);
+    await seek((_chromeCastService.isConnected
+            ? _chromeCastService.currentPosition
+            : _player.position) -
+        _rwAmount);
   }
 
   @override

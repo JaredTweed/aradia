@@ -11,7 +11,7 @@ import 'package:aradia/utils/permission_helper.dart';
 
 import '../../resources/latest_version_fetch.dart';
 import '../../resources/models/latest_version_fetch_model.dart';
-import '../../resources/services/recommendation_service.dart';
+import 'widgets/recommended_books_section.dart';
 import 'widgets/history_section.dart';
 import 'widgets/update_prompt_dialog.dart';
 import 'widgets/app_bar_actions.dart';
@@ -31,35 +31,22 @@ class _HomeState extends State<Home> {
   final LatestVersionFetch _latestVersionFetch = LatestVersionFetch();
   final String currentVersion = "3.0.0";
 
-  // Recommendation machinery
-  late final RecommendationService _recommendationService;
-  Future<String>? _recommendedGenresFuture;
-
   // Keep blocs/controllers stable across theme rebuilds
   late final HomeBloc _popularBloc;
   late final HomeBloc _trendingBloc;
-  late final HomeBloc _recommendedBloc;
 
   late final ScrollController _popularCtrl;
   late final ScrollController _trendingCtrl;
-  late final ScrollController _recommendedCtrl;
 
   @override
   void initState() {
     super.initState();
 
-    _recommendationService = RecommendationService();
-    _recommendedGenresFuture = _recommendationService
-        .getRecommendedGenres()
-        .then((genres) => genres.map((g) => '"$g"').join(' OR '));
-
     _popularBloc = HomeBloc();
     _trendingBloc = HomeBloc();
-    _recommendedBloc = HomeBloc();
 
     _popularCtrl = ScrollController();
     _trendingCtrl = ScrollController();
-    _recommendedCtrl = ScrollController();
 
     _checkForUpdates();
   }
@@ -68,11 +55,9 @@ class _HomeState extends State<Home> {
   void dispose() {
     _popularBloc.close();
     _trendingBloc.close();
-    _recommendedBloc.close();
 
     _popularCtrl.dispose();
     _trendingCtrl.dispose();
-    _recommendedCtrl.dispose();
     super.dispose();
   }
 
@@ -176,29 +161,7 @@ class _HomeState extends State<Home> {
           ),
           // --- Recommended genres section ---
           SliverToBoxAdapter(
-            child: FutureBuilder<String>(
-              future: _recommendedGenresFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done &&
-                    snapshot.hasData &&
-                    snapshot.data != null &&
-                    snapshot.data!.isNotEmpty) {
-                  return _buildLazyLoadSection(
-                    context,
-                    'Recommended for you',
-                    snapshot.data!,
-                  );
-                }
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: CircularProgressIndicator(
-                      color: AppColors.primaryColor,
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: const RecommendedBooksSection(),
           ),
 
           // --- Featured sections (popular and trending this week) ---
@@ -283,22 +246,6 @@ class _HomeState extends State<Home> {
           ),
         ],
       ),
-    );
-  }
-
-  // Removed VisibilityDetector and replaced with autoFetch
-  // autoFetch is true so that the section will fetch the data when the page is loaded
-  // In future if we want to add visibility detection, we can add it here
-  // with autoFetch as false
-  Widget _buildLazyLoadSection(
-      BuildContext context, String title, String genre) {
-    return MyAudiobooks(
-      title: title,
-      homeBloc: _recommendedBloc,
-      fetchType: AudiobooksFetchType.genre,
-      genre: genre,
-      scrollController: _recommendedCtrl,
-      autoFetch: true,
     );
   }
 }

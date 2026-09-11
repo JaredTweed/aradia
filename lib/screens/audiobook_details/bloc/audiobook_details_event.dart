@@ -7,12 +7,14 @@ class FetchAudiobookDetails extends AudiobookDetailsEvent {
   final String audiobookId;
   final bool isDownload;
   final bool isLocal;
+  final List<AudiobookFile>? files;
 
   FetchAudiobookDetails(
     this.audiobookId,
     this.isDownload,
-    this.isLocal,
-  );
+    this.isLocal, {
+    this.files,
+  });
 }
 
 class FavouriteIconButtonClicked extends AudiobookDetailsEvent {

@@ -75,7 +75,7 @@ class _TrackSelectionDialogState extends State<TrackSelectionDialog> {
       if (f.startMs != null) {
         final start = Duration(milliseconds: f.startMs!);
         _cumulativePositions.add(start);
-        // advance running as well so later tracks without startMs still look sane
+        // advance running as well so later chapters without startMs still look sane
         running = start + _effectiveLength(i);
       } else {
         // multi-file fallback: use running total of file lengths
@@ -224,7 +224,7 @@ class _TrackSelectionDialogState extends State<TrackSelectionDialog> {
                           ),
                           title: Text(
                             _audiobookFiles[index].title ??
-                                'Track ${_audiobookFiles[index].track ?? (index + 1)}',
+                                'Chapter ${_audiobookFiles[index].track ?? (index + 1)}',
                             style: TextStyle(
                               fontWeight: isCurrentTrack
                                   ? FontWeight.bold
@@ -274,7 +274,7 @@ class _TrackSelectionDialogState extends State<TrackSelectionDialog> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${_audiobookFiles.length} tracks',
+                        '${_audiobookFiles.length} chapters',
                         style: TextStyle(
                           color: isDark ? Colors.white70 : Colors.grey[600],
                           fontSize: 12,
