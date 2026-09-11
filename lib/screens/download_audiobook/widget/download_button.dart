@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:hive/hive.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,11 +33,23 @@ class _DownloadButtonState extends State<DownloadButton> {
   double _progress = 0;
   bool _isDownloading = false;
   bool _isDownloaded = false;
+  StreamSubscription<BoxEvent>? _statusSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadInitialState();
+    _statusSubscription = Hive.box('download_status_box')
+        .watch(key: 'status_${widget.audiobook.id}')
+        .listen((_) {
+      if (mounted) setState(_loadInitialState);
+    });
+  }
+
+  @override
+  void dispose() {
+    _statusSubscription?.cancel();
+    super.dispose();
   }
 
   void _loadInitialState() {
@@ -48,7 +62,7 @@ class _DownloadButtonState extends State<DownloadButton> {
     try {
       // Try to get notification permission, but don't block download if denied
       await PermissionHelper.handleDownloadPermissionWithDialog(context);
-      
+
       // Start download regardless of permission result
       // (notifications just won't show if permission denied)
       await _startDownload();
@@ -65,7 +79,7 @@ class _DownloadButtonState extends State<DownloadButton> {
   }
 
   Future<void> _startDownload() async {
-    if (!mounted) return;
+    if (!mounted || _isDownloading || widget.audiobookFiles.isEmpty) return;
 
     setState(() {
       _isDownloading = true;
@@ -125,6 +139,13 @@ class _DownloadButtonState extends State<DownloadButton> {
             _isDownloaded = completed;
           });
 
+          if (!completed) {
+            final error = _downloadManager.getError(widget.audiobook.id);
+            if (error != null) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(error)));
+            }
+          }
           if (completed) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

@@ -6,13 +6,11 @@ sealed class AudiobookDetailsEvent {}
 class FetchAudiobookDetails extends AudiobookDetailsEvent {
   final String audiobookId;
   final bool isDownload;
-  final bool isYoutube;
   final bool isLocal;
 
   FetchAudiobookDetails(
     this.audiobookId,
     this.isDownload,
-    this.isYoutube,
     this.isLocal,
   );
 }

@@ -119,9 +119,10 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                   presetName: name,
                 );
                 await _equalizerService.savePreset(name, settings);
+                if (!context.mounted || !mounted) return;
                 Navigator.pop(context);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(this.context).showSnackBar(
                     SnackBar(content: Text('Preset "$name" saved')),
                   );
                 }
@@ -185,6 +186,7 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
                           icon: const Icon(Icons.delete, size: 20),
                           onPressed: () async {
                             await _equalizerService.deletePreset(name);
+                            if (!context.mounted || !mounted) return;
                             Navigator.pop(context);
                             _showLoadPresetDialog(); // Refresh list
                           },

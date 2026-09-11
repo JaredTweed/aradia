@@ -211,22 +211,10 @@ class LocalAudiobookItem extends StatelessWidget {
           Provider.of<AudioHandlerProvider>(context, listen: false);
       final weSlideController =
           Provider.of<WeSlideController>(context, listen: false);
-      final playingAudiobookDetailsBox =
-          Hive.box('playing_audiobook_details_box');
       final historyOfAudiobook = HistoryOfAudiobook();
 
       final convertedAudiobook = await _convertToAudiobook();
       final audiobookFiles = await _convertToAudiobookFiles();
-
-      // Store audiobook details in Hive (used by player + mini-player)
-      await playingAudiobookDetailsBox.put(
-        'audiobook',
-        convertedAudiobook.toMap(),
-      );
-      await playingAudiobookDetailsBox.put(
-        'audiobookFiles',
-        audiobookFiles.map((e) => e.toMap()).toList(),
-      );
 
       if (historyOfAudiobook.isAudiobookInHistory(convertedAudiobook.id)) {
         final hist =
@@ -237,11 +225,7 @@ class LocalAudiobookItem extends StatelessWidget {
           hist.index,
           hist.position,
         );
-        await playingAudiobookDetailsBox.put('index', hist.index);
-        await playingAudiobookDetailsBox.put('position', hist.position);
       } else {
-        await playingAudiobookDetailsBox.put('index', 0);
-        await playingAudiobookDetailsBox.put('position', 0);
         await audioHandlerProvider.audioHandler.initSongs(
           audiobookFiles,
           convertedAudiobook,
@@ -250,8 +234,10 @@ class LocalAudiobookItem extends StatelessWidget {
         );
       }
 
-      weSlideController.show();
+      await audioHandlerProvider.audioHandler.play();
+      if (context.mounted) weSlideController.show();
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error playing audiobook: $e')),
       );

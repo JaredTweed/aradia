@@ -31,7 +31,9 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
               _scrollController.position.maxScrollExtent &&
           !isLoadingMore) {
         final state = searchBloc.state;
-        if (state is SearchSuccess && state.audiobooks.isNotEmpty) {
+        if (state is SearchSuccess &&
+            state.audiobooks.isNotEmpty &&
+            state.hasMore) {
           setState(() => isLoadingMore = true);
           // We no longer pass the current text; paging sticks to the last submitted query
           searchBloc.add(EventLoadMoreResults(searchBloc.lastQuery ?? ''));
@@ -71,7 +73,6 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -99,7 +100,7 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(25),
                     boxShadow: [
                       BoxShadow(
@@ -115,8 +116,8 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
                       Expanded(
                         child: TextField(
                           controller: _searchController,
-                          style: const TextStyle(
-                            color: Colors.black87,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 16,
                             fontWeight: FontWeight.w400,
                           ),
@@ -218,7 +219,6 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
                         ),
                       ),
                     ),
-
                   ],
                 ),
               ],
@@ -228,96 +228,105 @@ class _SearchAudiobookState extends State<SearchAudiobook> {
           // Results
           Expanded(
             child: BlocConsumer<SearchBloc, SearchState>(
-                    listener: (context, state) {
-                      if (state is SearchFailure) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(state.errorMessage),
-                            backgroundColor: Colors.red.shade300,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      } else if (state is SearchSuccess) {
-                        setState(() => isLoadingMore = false);
-                      }
-                    },
-                    builder: (context, state) {
-                      if (state is SearchLoading && !isLoadingMore) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.primaryColor),
-                        );
-                      } else if (state is SearchSuccess) {
-                        return ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(8),
-                          itemCount: state.audiobooks.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == state.audiobooks.length) {
-                              return isLoadingMore
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: AppColors.primaryColor,
-                                        ),
-                                      ),
-                                    )
-                                  : const SizedBox();
-                            }
-                            final audiobook = state.audiobooks[index];
-                            return Card(
-                              elevation: 2,
-                              margin: const EdgeInsets.symmetric(
-                                  vertical: 4, horizontal: 8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.all(8),
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: LowAndHighImage(
-                                    lowQImage: audiobook.lowQCoverImage,
-                                    highQImage: audiobook.lowQCoverImage,
-                                    width: 60,
-                                    height: 60,
+              listener: (context, state) {
+                if (state is SearchLoading || state is SearchFailure) {
+                  setState(() => isLoadingMore = false);
+                }
+                if (state is SearchFailure) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.errorMessage),
+                      backgroundColor: Colors.red.shade300,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else if (state is SearchSuccess) {
+                  setState(() => isLoadingMore = false);
+                  if (state.error != null) {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(state.error!)));
+                  }
+                }
+              },
+              builder: (context, state) {
+                if (state is SearchLoading && !isLoadingMore) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                        color: AppColors.primaryColor),
+                  );
+                } else if (state is SearchSuccess) {
+                  if (state.audiobooks.isEmpty) {
+                    return const Center(
+                        child:
+                            Text('No audiobooks found. Try another search.'));
+                  }
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(8),
+                    itemCount: state.audiobooks.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == state.audiobooks.length) {
+                        return isLoadingMore
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primaryColor,
                                   ),
                                 ),
-                                title: Text(
-                                  audiobook.title,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Text(
-                                  audiobook.author ?? 'Unknown Author',
-                                  style: TextStyle(color: Colors.grey.shade600),
-                                ),
-                                onTap: () {
-                                  context.push(
-                                    '/audiobook-details',
-                                    extra: {
-                                      'audiobook': audiobook,
-                                      'isDownload': false,
-                                      'isYoutube': false,
-                                      'isLocal': false,
-                                    },
-                                  );
-                                },
-                              ),
+                              )
+                            : const SizedBox();
+                      }
+                      final audiobook = state.audiobooks[index];
+                      return Card(
+                        elevation: 2,
+                        margin: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(8),
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LowAndHighImage(
+                              lowQImage: audiobook.lowQCoverImage,
+                              highQImage: audiobook.lowQCoverImage,
+                              width: 60,
+                              height: 60,
+                            ),
+                          ),
+                          title: Text(
+                            audiobook.title,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            audiobook.author ?? 'Unknown Author',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          onTap: () {
+                            context.push(
+                              '/audiobook-details',
+                              extra: {
+                                'audiobook': audiobook,
+                                'isDownload': false,
+                                'isLocal': false,
+                              },
                             );
                           },
-                        );
-                      }
-                      return const SizedBox();
+                        ),
+                      );
                     },
-                  ),
+                  );
+                }
+                return const SizedBox();
+              },
+            ),
           ),
         ],
       ),
     );
   }
-
 
   String _getHintText() {
     switch (searchFilter) {

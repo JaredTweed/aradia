@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:aradia/resources/services/local/cover_image_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -16,57 +17,37 @@ class LowAndHighImage extends StatelessWidget {
     this.width = 200,
   });
 
-  bool _isLocalPath(String path) {
-    return path.startsWith('/storage/emulated');
-  }
-
   @override
   Widget build(BuildContext context) {
-    final String mainImage =
-        lowQImage.contains('youtube') ? lowQImage : (highQImage ?? lowQImage);
+    Widget placeholder() => ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: const Center(child: Icon(Icons.headphones)),
+        );
 
-    Widget buildFallback() {
-      if (_isLocalPath(lowQImage)) {
-        return Image.file(
-          File(lowQImage),
-          fit: BoxFit.fill,
-          height: height,
-          width: width,
-        );
-      } else {
-        return CachedNetworkImage(
-          imageUrl: lowQImage,
-          fit: BoxFit.fill,
-          height: height,
-          width: width,
-        );
+    Widget image(String path, Widget Function() fallback) {
+      if (path.isEmpty) return fallback();
+      final local = asLocalPath(path);
+      if (local != null) {
+        return Image.file(File(local),
+            fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback());
       }
+      return CachedNetworkImage(
+        imageUrl: path,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => placeholder(),
+        errorWidget: (_, __, ___) => fallback(),
+      );
     }
 
-    Widget buildImage(String path) {
-      if (_isLocalPath(path)) {
-        return Image.file(
-          File(path),
-          fit: BoxFit.fill,
-          height: height,
-          width: width,
-        );
-      } else {
-        return CachedNetworkImage(
-          imageUrl: path,
-          fit: BoxFit.fill,
-          height: height,
-          width: width,
-          errorWidget: (context, url, error) => buildFallback(),
-          placeholder: (context, url) => buildFallback(),
-        );
-      }
-    }
-
+    final main = highQImage?.isNotEmpty == true ? highQImage! : lowQImage;
     return SizedBox(
       height: height,
       width: width,
-      child: buildImage(mainImage),
+      child: image(
+          main,
+          () => main == lowQImage
+              ? placeholder()
+              : image(lowQImage, placeholder)),
     );
   }
 }

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print('Usage: dart run bin/dump_atoms.dart <file.m4b>');
+    stdout.writeln('Usage: dart run bin/dump_atoms.dart <file.m4b>');
     exit(1);
   }
 
@@ -29,7 +29,7 @@ void _walkAtoms(Uint8List data, int start, int end, int depth) {
       header = 16;
     }
 
-    print('${'  ' * depth}Atom: $type  (size=$size @ $offset)');
+    stdout.writeln('${'  ' * depth}Atom: $type  (size=$size @ $offset)');
 
     if (size < header) break; // corrupt
     final next = offset + size;
@@ -37,11 +37,20 @@ void _walkAtoms(Uint8List data, int start, int end, int depth) {
 
     // Recurse into common container boxes
     const containers = {
-      'moov','trak','mdia','minf','stbl','edts','udta','meta','ilst'
+      'moov',
+      'trak',
+      'mdia',
+      'minf',
+      'stbl',
+      'edts',
+      'udta',
+      'meta',
+      'ilst'
     };
     if (containers.contains(type)) {
       // 'meta' has 4 bytes version/flags before children
-      final contentStart = type == 'meta' ? offset + header + 4 : offset + header;
+      final contentStart =
+          type == 'meta' ? offset + header + 4 : offset + header;
       _walkAtoms(data, contentStart, next, depth + 1);
     }
 
@@ -51,7 +60,7 @@ void _walkAtoms(Uint8List data, int start, int end, int depth) {
 
 int _readUint32(Uint8List data, int offset) {
   return (data[offset] << 24) |
-  (data[offset + 1] << 16) |
-  (data[offset + 2] << 8) |
-  (data[offset + 3]);
+      (data[offset + 1] << 16) |
+      (data[offset + 2] << 8) |
+      (data[offset + 3]);
 }

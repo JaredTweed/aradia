@@ -102,7 +102,7 @@ class ChromeCastService {
             subtitle: audiobook.author ?? 'Unknown',
             images: [
               GoogleCastImage(
-                url: Uri.parse(audiobook.lowQCoverImage!),
+                url: Uri.parse(audiobook.lowQCoverImage),
                 width: 480,
                 height: 480,
               ),

@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/resources/models/history_of_audiobook.dart';
-import 'package:aradia/resources/services/youtube/youtube_audio_service.dart';
 import 'package:aradia/resources/services/local/cover_image_service.dart';
 import 'package:aradia/resources/services/chromecast_service.dart';
 import 'package:aradia/utils/app_logger.dart';
@@ -14,7 +13,6 @@ import 'package:audio_session/audio_session.dart';
 import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 // Turn a local path or remote URL into a proper Uri for MediaItem.artUri.
 Uri? _artUriFrom(String? s) {
@@ -45,7 +43,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
   bool _sessionConfigured = false;
   bool _isReinitializing = false;
-  int _initGen = 0;
+  Future<void> _pendingInitialization = Future.value();
 
   MyAudioHandler() {
     _player = AudioPlayer(
@@ -60,8 +58,6 @@ class MyAudioHandler extends BaseAudioHandler {
   // Write barrier + context about the current audiobook
   bool _canPersistProgress = false;
   String? _activeAudiobookId;
-  int _targetStartMs = 0;
-  int _targetStartIndex = 0;
 
   // Debounce MRU/position writes so UIs don’t “flap”
   DateTime _lastPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -71,6 +67,7 @@ class MyAudioHandler extends BaseAudioHandler {
   StreamSubscription<PlaybackEvent>? _eventSub;
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<int?>? _indexSub;
 
   Future<void> _persistInstant() async {
     if (!_canPersistProgress || _isReinitializing) return;
@@ -78,9 +75,8 @@ class MyAudioHandler extends BaseAudioHandler {
     final idx = _player.currentIndex;
     if (id == null || idx == null) return;
     final liveMs = _player.position.inMilliseconds;
-    historyOfAudiobook.updateAudiobookPosition(id, idx, liveMs);
-    playingAudiobookDetailsBox.put('index', idx);
-    playingAudiobookDetailsBox.put('position', liveMs);
+    await historyOfAudiobook.updateAudiobookPosition(id, idx, liveMs);
+    await playingAudiobookDetailsBox.putAll({'index': idx, 'position': liveMs});
     _lastPersistAt = DateTime.now();
   }
 
@@ -110,7 +106,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
     // Pause if headphones unplugged
     session.becomingNoisyEventStream.listen((_) {
-      if (_player.playing) _player.pause();
+      if (_player.playing) pause();
     });
 
     _sessionConfigured = true;
@@ -194,7 +190,6 @@ class MyAudioHandler extends BaseAudioHandler {
       ));
     }
 
-    addQueueItems([]);
     queue.add(rebuilt);
 
     final idx = _player.currentIndex ?? 0;
@@ -205,14 +200,31 @@ class MyAudioHandler extends BaseAudioHandler {
     // Keep Hive "audiobook.lowQCoverImage" as-is; selector already updates it.
   }
 
-  Future<void> initSongs(
+  Future<void> initSongs(List<AudiobookFile> files, Audiobook audiobook,
+      int initialIndex, int positionInMilliseconds) {
+    final operation = _pendingInitialization.then((_) => _initializeSongs(
+        files, audiobook, initialIndex, positionInMilliseconds));
+    _pendingInitialization = operation.catchError((Object error) {
+      AppLogger.error('Unable to initialize audiobook: $error');
+    });
+    return operation;
+  }
+
+  Future<void> _initializeSongs(
     List<AudiobookFile> files,
     Audiobook audiobook,
     int initialIndex,
     int positionInMilliseconds,
   ) async {
+    if (files.isEmpty ||
+        files.any((file) => file.url == null || file.url!.isEmpty)) {
+      throw ArgumentError('The audiobook has no playable audio files.');
+    }
+    initialIndex = initialIndex.clamp(0, files.length - 1);
+    positionInMilliseconds =
+        positionInMilliseconds < 0 ? 0 : positionInMilliseconds;
+    await _persistInstant();
     _isReinitializing = true;
-    final myGen = ++_initGen;
 
     try {
       await _ensureAudioSession();
@@ -220,17 +232,13 @@ class MyAudioHandler extends BaseAudioHandler {
       // Disable persistence until the new queue is fully settled
       _canPersistProgress = false;
       _activeAudiobookId = audiobook.id;
-      _targetStartMs = positionInMilliseconds;
-      _targetStartIndex = initialIndex;
 
-      // Keep the "now playing" box in sync up front
-      await playingAudiobookDetailsBox.put('audiobook', audiobook.toMap());
-      await playingAudiobookDetailsBox.put(
-        'audiobookFiles',
-        files.map((f) => f.toMap()).toList(),
-      );
-      await playingAudiobookDetailsBox.put('index', initialIndex);
-      await playingAudiobookDetailsBox.put('position', positionInMilliseconds);
+      await playingAudiobookDetailsBox.putAll({
+        'audiobook': audiobook.toMap(),
+        'audiobookFiles': files.map((f) => f.toMap()).toList(),
+        'index': initialIndex,
+        'position': positionInMilliseconds,
+      });
 
       await _player.stop();
 
@@ -256,9 +264,6 @@ class MyAudioHandler extends BaseAudioHandler {
       final sources = <AudioSource>[];
 
       for (final song in files) {
-        final isYouTube = song.url?.contains('youtube.com') == true ||
-            song.url?.contains('youtu.be') == true;
-
         // Pick one art string: prefer per-track, else audiobook fallback
         String? artStr = audiobook.origin == "download"
             ? audiobook.lowQCoverImage
@@ -274,18 +279,13 @@ class MyAudioHandler extends BaseAudioHandler {
           extras: {
             'url': song.url,
             'audiobook_id': audiobook.id,
-            'is_youtube': isYouTube,
             'startMs': song.startMs,
             'durationMs': song.durationMs,
           },
         );
         mediaItems.add(item);
 
-        if (isYouTube && song.url != null) {
-          final videoId = VideoId.parseVideoId(song.url!) ?? song.url!;
-          sources.add(
-              YouTubeAudioSource(videoId: videoId, tag: item, quality: 'high'));
-        } else if (song.url != null) {
+        if (song.url != null) {
           final uri = song.url!.startsWith('/')
               ? Uri.file(song.url!)
               : Uri.parse(song.url!);
@@ -309,8 +309,6 @@ class MyAudioHandler extends BaseAudioHandler {
         }
       }
 
-      if (myGen != _initGen) return;
-
       final safeIndex =
           sources.isEmpty ? 0 : initialIndex.clamp(0, sources.length - 1);
 
@@ -321,58 +319,16 @@ class MyAudioHandler extends BaseAudioHandler {
 
       _audioSources = sources;
 
-      // For YouTube, some backends ignore the initialPosition until READY.
-      final currentIsYT = _isIndexYouTube(safeIndex);
-
-      // DEBUG
-      AppLogger.debug('initSongs: currentIsYT: $currentIsYT');
-      AppLogger.debug(_audioSources?.length.toString() ?? 'null');
-      AppLogger.debug(safeIndex.toString());
-      AppLogger.debug(positionInMilliseconds.toString());
-      for (int i = 0; i < (_audioSources?.length ?? 0); i++) {
-        AppLogger.debug(_audioSources?[i].toString() ?? 'null');
-      }
-
       await _player.setAudioSources(
         _audioSources!,
-        initialIndex: sources.isEmpty ? 0 : safeIndex,
-        initialPosition: currentIsYT
-            ? Duration.zero
-            : Duration(milliseconds: positionInMilliseconds),
+        initialIndex: safeIndex,
+        initialPosition: Duration(milliseconds: positionInMilliseconds),
       );
-
-      if (myGen != _initGen) return;
-
-      if (currentIsYT && positionInMilliseconds > 0) {
-        await _waitForProcessingReady(timeout: const Duration(seconds: 5));
-        await _player.seek(Duration(milliseconds: positionInMilliseconds),
-            index: safeIndex);
-      } else {
-        await _player.seek(Duration(milliseconds: positionInMilliseconds),
-            index: safeIndex);
-      }
-
-      // Auto-advance on completed
-      _player.processingStateStream.listen((state) {
-        if (state == ProcessingState.completed) {
-          _player.seekToNext();
-        }
-      });
-
-      // Wait until the player reports our intended start (looser eps for YT)
-      await _waitForStartToSettle(
-        safeIndex,
-        positionInMilliseconds,
-        isYouTube: currentIsYT,
-        timeout: const Duration(seconds: 3),
-      );
-
-      if (myGen != _initGen) return;
 
       _listenForCurrentSongIndexChanges();
 
       // Only add to history once, after we have a settled start
-      historyOfAudiobook.addToHistory(
+      await historyOfAudiobook.addToHistory(
         audiobook,
         files,
         safeIndex,
@@ -409,50 +365,14 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
-  bool _isIndexYouTube(int index) {
-    final children = _audioSources;
-    if (children == null || index < 0 || index >= children.length) return false;
-    return children[index] is YouTubeAudioSource;
-  }
-
-  Future<void> _waitForProcessingReady(
-      {Duration timeout = const Duration(seconds: 5)}) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      if (_player.processingState == ProcessingState.ready) return;
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-  }
-
-  Future<void> _waitForStartToSettle(
-    int index,
-    int positionMs, {
-    required bool isYouTube,
-    Duration timeout = const Duration(seconds: 2),
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-
-    // Tolerances: YT tends to have more jitter/latency
-    final posEpsMs = isYouTube ? 2500 : 1200;
-
-    while (DateTime.now().isBefore(deadline)) {
-      final idxOk = _player.currentIndex == index;
-      final posOk =
-          (_player.position.inMilliseconds - positionMs).abs() <= posEpsMs;
-
-      if (idxOk && posOk) return;
-      await Future.delayed(const Duration(milliseconds: 60));
-    }
-    // If we time out, proceed; barrier will be lifted and periodic saves will correct position.
-  }
-
   @override
   Future<void> addQueueItems(List<MediaItem> mediaItems) async {
-    queue.add(queue.value..addAll(mediaItems));
+    queue.add([...queue.value, ...mediaItems]);
   }
 
   void _listenForCurrentSongIndexChanges() {
-    _player.currentIndexStream.listen((index) {
+    _indexSub?.cancel();
+    _indexSub = _player.currentIndexStream.listen((index) {
       if (_isReinitializing) return;
       if (index == null) return;
 
@@ -481,7 +401,7 @@ class MyAudioHandler extends BaseAudioHandler {
     final liveMs = _player.position.inMilliseconds;
     if (liveMs >= 0) {
       historyOfAudiobook.updateAudiobookPosition(audiobookId, index, liveMs);
-      playingAudiobookDetailsBox.put('position', liveMs);
+      playingAudiobookDetailsBox.putAll({'index': index, 'position': liveMs});
       _lastPersistAt = now;
       AppLogger.debug('Position updated: $liveMs ms');
     }
@@ -593,13 +513,19 @@ class MyAudioHandler extends BaseAudioHandler {
   // ── AudioHandler overrides ────────────────────────────────────────────────
   @override
   Future<void> play() async {
+    await _pendingInitialization;
     await _restoreQueueFromBoxIfEmpty(); // only at cold start
 
     // Route to ChromeCast if connected
     if (_chromeCastService.isConnected) {
       await _chromeCastService.play();
     } else {
-      await _player.play();
+      if (_player.processingState == ProcessingState.completed) {
+        await _player.seek(Duration.zero, index: 0);
+      }
+      final id = _activeAudiobookId;
+      if (id != null) _startPositionUpdateTimer(id);
+      unawaited(_player.play());
     }
 
     _broadcastState(_player.playbackEvent);
@@ -614,15 +540,7 @@ class MyAudioHandler extends BaseAudioHandler {
       await _player.pause();
     }
 
-    // Opportunistic persist when pausing the active item
-    final id = _activeAudiobookId;
-    final idx = _player.currentIndex;
-    if (_canPersistProgress &&
-        !_isReinitializing &&
-        id != null &&
-        idx != null) {
-      _persistNow(id, idx);
-    }
+    await _persistInstant();
     _broadcastState(_player.playbackEvent);
   }
 
@@ -637,7 +555,6 @@ class MyAudioHandler extends BaseAudioHandler {
       await _player.stop();
     }
 
-    _coverSub?.cancel();
     _broadcastState(_player.playbackEvent);
     await _persistInstant();
   }
@@ -657,6 +574,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= queue.value.length) return;
     await _player.seek(Duration.zero, index: index);
     await _persistInstant();
     await play();
@@ -813,6 +731,9 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   Duration get position => _player.position;
+  bool get skipSilence => _player.skipSilenceEnabled;
+  double get volume => _player.volume;
+  double get speed => _player.speed;
 
   void playPrevious() {
     final length = _audioSources?.length ?? 0;

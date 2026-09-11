@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:aradia/resources/designs/theme_notifier.dart';
-import 'package:ionicons/ionicons.dart';
-import 'package:go_router/go_router.dart';
 
 class AppBarActions extends StatelessWidget {
-  // ignore: unused_field
-  final ThemeNotifier themeNotifier;
   final VoidCallback onSettingsPressed;
 
   const AppBarActions({
     super.key,
-    required this.themeNotifier,
     required this.onSettingsPressed,
   });
 
@@ -19,11 +13,6 @@ class AppBarActions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedIconButton(
-          icon: const Icon(Ionicons.logo_youtube),
-          onPressed: () => context.push('/youtube'),
-          tooltip: 'YouTube Import',
-        ),
         // Theme toggling moved to Settings page.
         AnimatedIconButton(
           icon: const Icon(Icons.settings),

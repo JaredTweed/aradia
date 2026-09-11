@@ -2,9 +2,8 @@ import 'package:flutter/foundation.dart' show immutable;
 
 @immutable
 class AppConstants {
-  const AppConstants._(); 
+  const AppConstants._();
 
-  static const String youtubeDirName = 'youtube';
   static const String localDirName = 'local';
 
   static const List<String> supportedAudioExtensions = [

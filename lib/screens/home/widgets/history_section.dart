@@ -145,40 +145,35 @@ class _HistorySectionState extends State<HistorySection> {
     double totalTimeSeconds,
     double completedSecondsBeforeIndex,
   ) {
-    final progress = totalTimeSeconds > 0
-        ? (item.position + (completedSecondsBeforeIndex * 1000)) /
-            (totalTimeSeconds * 1000)
-        : 0.0;
+    final progress = (totalTimeSeconds > 0
+            ? (item.position + (completedSecondsBeforeIndex * 1000)) /
+                (totalTimeSeconds * 1000)
+            : 0.0)
+        .clamp(0.0, 1.0);
 
     return Container(
       width: 175,
       padding: const EdgeInsets.only(right: 8),
       child: GestureDetector(
-        onTap: () {
-          if (audioHandlerProvider.audioHandler.getCurrentAudiobookId() ==
-              item.audiobook.id) {
-            _weSlideController.show();
-            return;
+        onTap: () async {
+          final handler = audioHandlerProvider.audioHandler;
+          try {
+            if (handler.getCurrentAudiobookId() != item.audiobook.id) {
+              final hist = historyOfAudiobook
+                  .getHistoryOfAudiobookItem(item.audiobook.id);
+              await handler.initSongs(item.audiobookFiles, item.audiobook,
+                  hist.index, hist.position);
+            }
+            await handler.play();
+            if (mounted) _weSlideController.show();
+          } catch (_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text(
+                      'Unable to resume this audiobook. Please try again.')),
+            );
           }
-
-          playingAudiobookDetailsBox.put('audiobook', item.audiobook.toMap());
-          playingAudiobookDetailsBox.put(
-            'audiobookFiles',
-            item.audiobookFiles.map((e) => e.toMap()).toList(),
-          );
-
-          final hist =
-              historyOfAudiobook.getHistoryOfAudiobookItem(item.audiobook.id);
-          audioHandlerProvider.audioHandler.initSongs(
-            item.audiobookFiles,
-            item.audiobook,
-            hist.index,
-            hist.position,
-          );
-          playingAudiobookDetailsBox.put('index', hist.index);
-          playingAudiobookDetailsBox.put('position', hist.position);
-
-          _weSlideController.show();
         },
         onLongPress: () {
           showDialog(
@@ -377,8 +372,6 @@ class _HistorySectionState extends State<HistorySection> {
   Widget _getOriginIcon(String? origin) {
     if (origin == 'librivox') {
       return const Icon(Ionicons.book, color: Colors.white, size: 15);
-    } else if (origin == 'youtube') {
-      return const Icon(Ionicons.logo_youtube, color: Colors.white, size: 15);
     } else if (origin == 'download') {
       return const Icon(Ionicons.cloud_download, color: Colors.white, size: 15);
     } else if (origin == 'local') {

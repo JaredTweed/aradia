@@ -31,8 +31,15 @@ class Controls extends StatefulWidget {
 }
 
 class _ControlsState extends State<Controls> {
-  double _playbackSpeed = 1.0;
-  double _volume = 0.5;
+  late double _playbackSpeed;
+  late double _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    _playbackSpeed = widget.audioHandler.speed;
+    _volume = widget.audioHandler.volume;
+  }
 
   void _changePlaybackSpeed() {
     showModalBottomSheet(

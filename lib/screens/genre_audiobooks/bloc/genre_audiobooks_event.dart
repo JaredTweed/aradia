@@ -6,10 +6,12 @@ sealed class GenreAudiobooksEvent {}
 class LoadInitialAudiobooksEvent extends GenreAudiobooksEvent {
   final String genre;
   final String listType;
+  final bool refresh;
 
   LoadInitialAudiobooksEvent({
     required this.genre,
     required this.listType,
+    this.refresh = false,
   });
 }
 

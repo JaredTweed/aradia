@@ -9,7 +9,9 @@ class SearchLoading extends SearchState {}
 
 class SearchSuccess extends SearchState {
   final List<Audiobook> audiobooks;
-  SearchSuccess(this.audiobooks);
+  final bool hasMore;
+  final String? error;
+  SearchSuccess(this.audiobooks, {this.hasMore = true, this.error});
 }
 
 class SearchFailure extends SearchState {

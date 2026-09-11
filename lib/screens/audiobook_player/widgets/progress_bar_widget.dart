@@ -13,17 +13,23 @@ class ProgressBarWidget extends StatelessWidget {
       builder: (context, snapshot) {
         final positionData = snapshot.data;
         final totalDuration = positionData?.duration ?? Duration.zero;
-        final remainingTime =
-            totalDuration - (positionData?.position ?? Duration.zero);
+        final position = Duration(
+            milliseconds: (positionData?.position.inMilliseconds ?? 0)
+                .clamp(0, totalDuration.inMilliseconds));
+        final buffered = Duration(
+            milliseconds: (positionData?.bufferedPosition.inMilliseconds ?? 0)
+                .clamp(0, totalDuration.inMilliseconds));
+        final remainingTime = totalDuration - position;
+        final colors = Theme.of(context).colorScheme;
         return Column(
           children: [
             ProgressBar(
-              progressBarColor: Colors.deepOrange[600],
-              thumbColor: Colors.deepOrange[800],
-              baseBarColor: Colors.deepOrange[100],
-              bufferedBarColor: Colors.deepOrange[200]!,
-              progress: positionData?.position ?? Duration.zero,
-              buffered: positionData?.bufferedPosition ?? Duration.zero,
+              progressBarColor: colors.primary,
+              thumbColor: colors.primary,
+              baseBarColor: colors.surfaceContainerHighest,
+              bufferedBarColor: colors.primary.withValues(alpha: 0.3),
+              progress: position,
+              buffered: buffered,
               total: totalDuration,
               onSeek: (duration) {
                 audioHandler.seek(duration);

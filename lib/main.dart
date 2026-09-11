@@ -1,12 +1,10 @@
+import 'package:aradia/resources/services/library_migration.dart';
+import 'package:aradia/widgets/player_back_scope.dart';
 import 'package:aradia/resources/designs/theme_notifier.dart';
 import 'package:aradia/resources/designs/themes.dart';
 import 'package:aradia/resources/services/chromecast_service.dart';
-import 'package:aradia/resources/services/youtube/youtube_audiobook_notifier.dart';
-import 'package:aradia/resources/services/youtube/webview_keep_alive_provider.dart';
 import 'package:aradia/screens/recommendation/recommendation_screen.dart';
 import 'package:aradia/screens/setting/settings.dart';
-import 'package:aradia/screens/youtube_webview/youtube_webview.dart';
-import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -15,7 +13,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/screens/audiobook_details/audiobook_details.dart';
 import 'package:aradia/screens/audiobook_details/bloc/audiobook_details_bloc.dart';
-import 'package:aradia/screens/audiobook_player/audiobook_player.dart';
 import 'package:aradia/screens/download_audiobook/downloads_page.dart';
 import 'package:aradia/screens/genre_audiobooks/genre_audiobooks.dart';
 import 'package:aradia/screens/home/home.dart';
@@ -42,8 +39,6 @@ void main() async {
   final audioHandlerProvider = AudioHandlerProvider();
   final weSlideController = WeSlideController();
   final themeNotifier = ThemeNotifier();
-  final youtubeAudiobookNotifier = YoutubeAudiobookNotifier();
-  final webViewKeepAliveProvider = WebViewKeepAliveProvider();
 
   runApp(
     MultiProvider(
@@ -51,8 +46,6 @@ void main() async {
         ChangeNotifierProvider(create: (_) => audioHandlerProvider),
         ChangeNotifierProvider(create: (_) => weSlideController),
         ChangeNotifierProvider(create: (_) => themeNotifier),
-        ChangeNotifierProvider(create: (_) => youtubeAudiobookNotifier),
-        ChangeNotifierProvider(create: (_) => webViewKeepAliveProvider),
       ],
       child: const MyApp(),
     ),
@@ -81,6 +74,7 @@ Future<void> initHive() async {
   await Hive.openBox('recommened_audiobooks_box');
   await Hive.openBox('dual_mode_box'); // 0 = audiobook home, 1 = podcast home
   await Hive.openBox('language_prefs_box');
+  await migrateSavedLibrary();
   Box recommendedAudiobooksBox = Hive.box('recommened_audiobooks_box');
 
   isRecommendScreen = recommendedAudiobooksBox.isEmpty ? 1 : 0;
@@ -121,20 +115,23 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/home',
                   name: 'home',
-                  builder: (context, state) => const Home(),
+                  builder: (context, state) =>
+                      const PlayerBackScope(child: Home()),
                 ),
                 GoRoute(
                   path: '/settings',
                   name: 'settings',
-                  builder: (context, state) => const Settings(),
+                  builder: (context, state) =>
+                      const PlayerBackScope(child: Settings()),
                 ),
                 GoRoute(
                   path: '/genre_audiobooks',
                   name: 'genre_audiobooks',
                   builder: (context, state) {
-                    return GenreAudiobooksScreen(
+                    return PlayerBackScope(
+                        child: GenreAudiobooksScreen(
                       genre: state.extra as String,
-                    );
+                    ));
                   },
                 ),
                 GoRoute(
@@ -142,26 +139,18 @@ class _MyAppState extends State<MyApp> {
                   builder: (context, state) {
                     final extras = state.extra as Map<String, dynamic>;
                     final audiobook = extras['audiobook'] as Audiobook;
-                    final isDownload = extras['isDownload'] as bool;
-                    final isYoutube = extras['isYoutube'] as bool;
-                    final isLocal = extras['isLocal'] as bool;
-                    return AudiobookDetails(
-                      audiobook: audiobook,
-                      isDownload: isDownload,
-                      isYoutube: isYoutube,
-                      isLocal: isLocal,
+                    final isDownload = extras['isDownload'] as bool? ?? false;
+                    final isLocal = extras['isLocal'] as bool? ?? false;
+                    return BlocProvider(
+                      create: (_) => AudiobookDetailsBloc(),
+                      child: PlayerBackScope(
+                          child: AudiobookDetails(
+                        audiobook: audiobook,
+                        isDownload: isDownload,
+                        isLocal: isLocal,
+                      )),
                     );
                   },
-                ),
-                GoRoute(
-                  path: '/player',
-                  name: 'player',
-                  builder: (context, state) => const AudiobookPlayer(),
-                ),
-                GoRoute(
-                  path: '/youtube',
-                  name: 'youtube',
-                  builder: (context, state) => const YoutubeWebview(),
                 ),
               ],
             ),
@@ -170,7 +159,8 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/search',
                   name: 'search',
-                  builder: (context, state) => const SearchAudiobook(),
+                  builder: (context, state) =>
+                      const PlayerBackScope(child: SearchAudiobook()),
                 ),
               ],
             ),
@@ -179,7 +169,8 @@ class _MyAppState extends State<MyApp> {
                 GoRoute(
                   path: '/download',
                   name: 'download',
-                  builder: (context, state) => const DownloadsPage(),
+                  builder: (context, state) =>
+                      const PlayerBackScope(child: DownloadsPage()),
                 ),
               ],
             ),
@@ -189,23 +180,10 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  bool _backButtonInterceptor(bool stopDefaultButtonEvent, RouteInfo info) {
-    AppLogger.debug(
-        'initialized back button interceptor', 'BackButtonInterceptor');
-    WeSlideController weSlideController =
-        Provider.of<WeSlideController>(context, listen: false);
-    if (weSlideController.isOpened) {
-      AppLogger.debug('closing', 'BackButtonInterceptor');
-      weSlideController.hide();
-      return true;
-    }
-    return false;
-  }
-
   @override
-  void initState() {
-    super.initState();
-    BackButtonInterceptor.add(_backButtonInterceptor);
+  void dispose() {
+    _router.dispose();
+    super.dispose();
   }
 
   @override
@@ -214,9 +192,6 @@ class _MyAppState extends State<MyApp> {
       builder: (context, themeNotifier, _) {
         return MultiBlocProvider(
           providers: [
-            BlocProvider(
-              create: (context) => AudiobookDetailsBloc(),
-            ),
             BlocProvider(
               create: (context) => SearchBloc(),
             ),

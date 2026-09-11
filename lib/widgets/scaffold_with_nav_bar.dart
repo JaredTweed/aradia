@@ -1,3 +1,5 @@
+import 'package:provider/provider.dart';
+import 'package:we_slide/we_slide.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
@@ -25,50 +27,64 @@ class _ScaffoldWithNavBarState extends State<ScaffoldWithNavBar> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<BoxEvent>(
-      stream: _boxEventStream,
-      builder: (context, snapshot) {
-        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-
-        // one BottomNavigationBar instance to reuse
-        final navBar = BottomNavigationBar(
-          showSelectedLabels: false,
-          showUnselectedLabels: false,
-          selectedFontSize: 0,
-          unselectedFontSize: 0,
-          type: BottomNavigationBarType.fixed,
-          unselectedItemColor: Colors.grey,
-          selectedItemColor: const Color.fromRGBO(204, 119, 34, 1),
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: ''),
-            //BottomNavigationBarItem(icon: Icon(Icons.favorite), label: ''),
-            BottomNavigationBarItem(icon: Icon(Icons.search), label: ''),
-            BottomNavigationBarItem(icon: Icon(Ionicons.download), label: ''),
-            //BottomNavigationBarItem(icon: Icon(Ionicons.caret_down_circle_outline), label: ''),
-          ],
-          currentIndex: widget.navigationShell.currentIndex,
-          onTap: _onTap,
-        );
-
-        if (playingAudiobookDetailsBox.isEmpty) {
-          // No mini-player at all → just hide the navbar while typing
-          return Scaffold(
-            body: widget.navigationShell,
-            bottomNavigationBar: keyboardOpen ? null : navBar,
-          );
+    final playerController = context.watch<WeSlideController>();
+    return PopScope(
+      canPop: !playerController.isOpened &&
+          widget.navigationShell.currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (playerController.isOpened) {
+          playerController.hide();
+        } else if (widget.navigationShell.currentIndex != 0) {
+          widget.navigationShell.goBranch(0);
         }
-
-        // With mini-player → always mount MiniAudioPlayer and pass keyboard state
-        return Scaffold(
-          body: MiniAudioPlayer(
-            playingAudiobookDetailsBox: playingAudiobookDetailsBox,
-            navigationShell: widget.navigationShell,
-            bottomNavigationBar: navBar,
-            bottomNavBarSize: const NavigationBarThemeData().height ?? 70,
-            isKeyboardOpen: keyboardOpen, // 👈 NEW
-          ),
-        );
       },
+      child: StreamBuilder<BoxEvent>(
+        stream: _boxEventStream,
+        builder: (context, snapshot) {
+          final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+
+          // one BottomNavigationBar instance to reuse
+          final navBar = BottomNavigationBar(
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            selectedFontSize: 0,
+            unselectedFontSize: 0,
+            type: BottomNavigationBarType.fixed,
+            unselectedItemColor: Colors.grey,
+            selectedItemColor: const Color.fromRGBO(204, 119, 34, 1),
+            items: const <BottomNavigationBarItem>[
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.search), label: 'Search'),
+              BottomNavigationBarItem(
+                  icon: Icon(Ionicons.download), label: 'Downloads'),
+            ],
+            currentIndex: widget.navigationShell.currentIndex,
+            onTap: _onTap,
+          );
+
+          if (!playingAudiobookDetailsBox.containsKey('audiobook')) {
+            // No mini-player at all → just hide the navbar while typing
+            return Scaffold(
+              body: widget.navigationShell,
+              bottomNavigationBar: keyboardOpen ? null : navBar,
+            );
+          }
+
+          // With mini-player → always mount MiniAudioPlayer and pass keyboard state
+          return Scaffold(
+            body: MiniAudioPlayer(
+              playingAudiobookDetailsBox: playingAudiobookDetailsBox,
+              navigationShell: widget.navigationShell,
+              bottomNavigationBar: navBar,
+              bottomNavBarSize: kBottomNavigationBarHeight +
+                  MediaQuery.paddingOf(context).bottom,
+              isKeyboardOpen: keyboardOpen, // 👈 NEW
+            ),
+          );
+        },
+      ),
     );
   }
 

@@ -41,19 +41,15 @@ class HistoryOfAudiobook {
   Future<void> addToHistory(Audiobook audiobook,
       List<AudiobookFile> audiobookFiles, int index, int position) async {
     await _ensureInitialized();
-    if (!historyOfAudiobookBox.containsKey(audiobook.id)) {
-      final item = HistoryOfAudiobookItem(
-        audiobook: audiobook,
-        audiobookFiles: audiobookFiles,
-        index: index,
-        position: position,
-        lastModified: DateTime.now(),
-      );
-      await historyOfAudiobookBox.put(audiobook.id, item.toMap());
-      _historyStreamController.add(getHistory());
-    } else {
-      updateAudiobookPosition(audiobook.id, index, position);
-    }
+    final item = HistoryOfAudiobookItem(
+      audiobook: audiobook,
+      audiobookFiles: audiobookFiles,
+      index: index,
+      position: position,
+      lastModified: DateTime.now(),
+    );
+    await historyOfAudiobookBox.put(audiobook.id, item.toMap());
+    _historyStreamController.add(getHistory());
   }
 
   List<HistoryOfAudiobookItem> getHistory() {

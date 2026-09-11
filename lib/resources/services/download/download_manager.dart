@@ -1,10 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
-import 'package:aradia/resources/services/youtube/stream_client.dart';
 import 'package:aradia/utils/app_logger.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:aradia/utils/permission_helper.dart';
 
 class DownloadManager {
@@ -15,12 +14,10 @@ class DownloadManager {
   final FileDownloader _downloader = FileDownloader();
   final Box<dynamic> downloadStatusBox = Hive.box('download_status_box');
   final Map<String, bool> _activeDownloads = {};
+  final Map<String, DownloadTask> _currentTasks = {};
 
-  static const int _veryLargeFileThresholdBytes = 50 * 1024 * 1024;
-
-  Future<bool> checkAndRequestPermissions() async {
-    return await PermissionHelper.requestDownloadPermissions();
-  }
+  Future<bool> checkAndRequestPermissions() =>
+      PermissionHelper.requestDownloadPermissions();
 
   Future<void> downloadAudiobook(
     String audiobookId,
@@ -29,21 +26,32 @@ class DownloadManager {
     Function(double) onProgressUpdate,
     Function(bool) onCompleted,
   ) async {
-    YoutubeExplode? yt;
-    AudioStreamClient? audioStreamClient;
+    if (_activeDownloads.containsKey(audiobookId)) return;
+    _activeDownloads[audiobookId] = true;
+    double progress = 0;
+    bool completed = false;
+    final statusKey = 'status_$audiobookId';
+    Map<String, dynamic> status({String? error}) => {
+          'audiobookId': audiobookId,
+          'audiobookTitle': audiobookTitle,
+          'isDownloading': !completed && error == null,
+          'isCompleted': completed,
+          'progress': progress,
+          if (error != null) 'error': error,
+          if (completed) 'downloadDate': DateTime.now().toIso8601String(),
+        };
 
     try {
-      // Check notification permissions - download will work without them, but no notifications
-      final hasNotificationPermission = await checkAndRequestPermissions();
-
-      _downloader.configure(
-          androidConfig: [(Config.useExternalStorage, Config.always)]);
-      
-      // Only configure notifications if we have permission
-      if (hasNotificationPermission) {
+      await downloadStatusBox.put(statusKey, status());
+      if (files.isEmpty) throw StateError('No audio files to download.');
+      final hasNotifications = await checkAndRequestPermissions();
+      await _downloader.configure(
+        androidConfig: [(Config.useExternalStorage, Config.always)],
+      );
+      if (hasNotifications) {
         _downloader.configureNotification(
-          running:
-              TaskNotification('Downloading $audiobookTitle', 'File: {filename}'),
+          running: TaskNotification(
+              'Downloading $audiobookTitle', 'File: {filename}'),
           progressBar: true,
           complete: TaskNotification(
               'Download complete: $audiobookTitle', 'File: {filename}'),
@@ -51,286 +59,99 @@ class DownloadManager {
               'Download error: $audiobookTitle', 'File: {filename}'),
         );
       }
-
-      if (_activeDownloads[audiobookId] == true) return;
-      _activeDownloads[audiobookId] = true;
-
-      final totalFiles = files.length;
-      int completedFiles = 0;
-      double totalProgress = 0.0;
-
-      await downloadStatusBox.put('status_$audiobookId', {
-        'isDownloading': true,
-        'progress': 0.0,
-        'isCompleted': false,
-        'audiobookTitle': audiobookTitle,
-        'audiobookId': audiobookId,
-        'isYouTube': files.any((f) =>
-            (f['url'] as String).contains('youtube.com') ||
-            (f['url'] as String).contains('youtu.be')),
-      });
-
-      yt = YoutubeExplode();
-
-      for (int i = 0; i < files.length; i++) {
-        final fileData = files[i];
-        if (_activeDownloads[audiobookId] != true) {
-          await _cleanupPartialDownload(audiobookId);
-          await downloadStatusBox.delete('status_$audiobookId');
-          onCompleted(false);
-          return;
+      for (var i = 0; i < files.length; i++) {
+        if (_activeDownloads[audiobookId] != true) break;
+        final url = files[i]['url'] as String?;
+        final uri = url == null ? null : Uri.tryParse(url);
+        if (uri == null ||
+            !['http', 'https'].contains(uri.scheme) ||
+            uri.host.isEmpty) {
+          throw FormatException('Invalid audio download URL.');
         }
-
-        final String fileTitle =
-            fileData['title'] as String? ?? 'track_${i + 1}';
-        final String fileName = '$fileTitle.mp3';
-        final String url = fileData['url'] as String;
-        final bool isYouTubeUrl =
-            url.contains('youtube.com') || url.contains('youtu.be');
-        String currentFileDirectoryPath = 'downloads/$audiobookId';
-
-        if (isYouTubeUrl) {
-          File? outputFile;
-          IOSink? fileStream;
-          try {
-            String? parsedVideoId = Uri.parse(url).queryParameters['v'] ??
-                (url.contains('youtu.be/')
-                    ? url.split('youtu.be/').last.split('?').first
-                    : null);
-            if (parsedVideoId == null) {
-              throw Exception('Invalid YouTube URL: $url');
-            }
-
-            final manifest = await yt.videos.streams.getManifest(parsedVideoId,
-                requireWatchPage: true,
-                ytClients: [YoutubeApiClient.androidVr]);
-
-            List<AudioOnlyStreamInfo> mp4AudioStreams = manifest.audioOnly
-                .where((s) => s.container == StreamContainer.mp4)
-                .sortByBitrate()
-                .toList();
-
-            AudioOnlyStreamInfo? audioStreamInfo = mp4AudioStreams.isNotEmpty
-                ? mp4AudioStreams.last
-                : manifest.audioOnly.withHighestBitrate();
-
-            final appDocDir = await getExternalStorageDirectory();
-            final fullDirectoryPath =
-                Directory('${appDocDir?.path}/$currentFileDirectoryPath');
-            if (!await fullDirectoryPath.exists()) {
-              await fullDirectoryPath.create(recursive: true);
-            }
-
-            outputFile = File('${fullDirectoryPath.path}/$fileName');
-            fileStream = outputFile.openWrite();
-
-            final int totalBytesForFile = audioStreamInfo.size.totalBytes;
-            int receivedBytesForFile = 0;
-
-            audioStreamClient = AudioStreamClient();
-
-            final bool useChunking = audioStreamInfo.isThrottled ||
-                totalBytesForFile > _veryLargeFileThresholdBytes;
-
-            final stream = audioStreamClient.getAudioStream(
-              audioStreamInfo,
-              start: 0,
-              end: totalBytesForFile,
-              isThrottledOrVeryLarge: useChunking,
-            );
-
-            await for (final data in stream) {
-              if (_activeDownloads[audiobookId] != true) {
-                await fileStream.close();
-                if (await outputFile.exists()) await outputFile.delete();
-                throw Exception('Download cancelled (YouTube)');
-              }
-              fileStream.add(data);
-              receivedBytesForFile += data.length;
-              double fileProgress = totalBytesForFile > 0
-                  ? (receivedBytesForFile / totalBytesForFile)
-                  : 0.0;
-              totalProgress = (completedFiles + fileProgress) / totalFiles;
-              onProgressUpdate(totalProgress);
-              await downloadStatusBox.put('status_$audiobookId', {
-                'isDownloading': true,
-                'progress': totalProgress,
-                'isCompleted': false,
-                'audiobookTitle': audiobookTitle,
-                'audiobookId': audiobookId,
-                'isYouTube': true,
-              });
-            }
-            await fileStream.flush();
-            await fileStream.close();
-            fileStream = null;
-            completedFiles++;
-          } catch (e, s) {
-            await fileStream?.close();
-            _activeDownloads.remove(audiobookId);
-            await downloadStatusBox.put('status_$audiobookId', {
-              'isDownloading': false,
-              'progress': totalProgress,
-              'isCompleted': false,
-              'error': 'File $fileName: ${e.toString()}',
-              'audiobookTitle': audiobookTitle,
-              'audiobookId': audiobookId,
-              'isYouTube': true,
-            });
-            AppLogger.debug('YT Download Error: $e\n$s');
-            await _cleanupPartialDownload(audiobookId);
-            onCompleted(false);
-            return;
-          } finally {
-            audioStreamClient?.close();
-            audioStreamClient = null;
-          }
-        } else {
-          final String uniqueFileTaskId =
-              '$audiobookId-$i-${Uri.encodeComponent(fileTitle)}';
-          DownloadTask task = DownloadTask(
-            taskId: uniqueFileTaskId,
-            url: url,
-            filename: fileName,
-            directory: currentFileDirectoryPath,
-            baseDirectory: BaseDirectory.applicationDocuments,
-            updates: Updates.statusAndProgress,
-            allowPause: true,
-          );
-          await downloadStatusBox.put('task_$uniqueFileTaskId', task.toJson());
-          try {
-            await _downloader.download(task, onProgress: (progress) {
-              if (_activeDownloads[audiobookId] != true) {
-                _downloader.cancelTaskWithId(task.taskId);
-                throw Exception('Download cancelled (Direct URL)');
-              }
-              totalProgress = (completedFiles + progress) / totalFiles;
-              onProgressUpdate(totalProgress);
-              downloadStatusBox.put('status_$audiobookId', {
-                'isDownloading': true,
-                'progress': totalProgress,
-                'isCompleted': false,
-                'audiobookTitle': audiobookTitle,
-                'audiobookId': audiobookId,
-                'isYouTube': false,
-              });
-            }).then((result) {
-              if (result.status == TaskStatus.complete) {
-                completedFiles++;
-              } else if (result.status == TaskStatus.failed ||
-                  result.status == TaskStatus.canceled) {
-                throw Exception(
-                    'Direct download ${result.status} for $fileName.');
-              }
-            });
-          } catch (e) {
-            _activeDownloads.remove(audiobookId);
-            await downloadStatusBox.put('status_$audiobookId', {
-              'isDownloading': false,
-              'progress': totalProgress,
-              'isCompleted': false,
-              'error': 'File $fileName: ${e.toString()}',
-              'audiobookTitle': audiobookTitle,
-              'audiobookId': audiobookId,
-              'isYouTube': false,
-            });
-            AppLogger.debug('Direct Download Error: $e');
-            await _cleanupPartialDownload(audiobookId);
-            onCompleted(false);
-            return;
-          }
-        }
-      }
-
-      if (completedFiles == totalFiles) {
-        _activeDownloads.remove(audiobookId);
-        await downloadStatusBox.put('status_$audiobookId', {
-          'isDownloading': false,
-          'progress': 1.0,
-          'isCompleted': true,
-          'audiobookTitle': audiobookTitle,
-          'audiobookId': audiobookId,
-          'downloadDate': DateTime.now().toIso8601String(),
-          'isYouTube':
-              downloadStatusBox.get('status_$audiobookId')?['isYouTube'] ??
-                  false,
+        // Numbered names preserve chapter order and cannot collide or contain path separators.
+        final title = (files[i]['title'] as String? ?? 'Track')
+            .replaceAll(RegExp(r'[\/:*?"<>|]'), '_');
+        final shortTitle = title.length > 100 ? title.substring(0, 100) : title;
+        final task = DownloadTask(
+          taskId: '$audiobookId-$i',
+          url: url!,
+          filename: '${(i + 1).toString().padLeft(5, '0')}-$shortTitle.mp3',
+          directory: 'downloads/$audiobookId',
+          baseDirectory: BaseDirectory.applicationDocuments,
+          updates: Updates.statusAndProgress,
+        );
+        _currentTasks[audiobookId] = task;
+        await downloadStatusBox.put('task_${task.taskId}', task.toJson());
+        final result = await _downloader.download(task, onProgress: (value) {
+          if (_activeDownloads[audiobookId] != true || value < 0) return;
+          progress = (i + value.clamp(0.0, 1.0)) / files.length;
+          onProgressUpdate(progress);
+          downloadStatusBox.put(statusKey, status());
         });
-        onCompleted(true);
-      } else {
-        _activeDownloads.remove(audiobookId);
-        if (!downloadStatusBox.containsKey('status_$audiobookId') ||
-            (downloadStatusBox.get('status_$audiobookId')?['error'] == null &&
-                downloadStatusBox.get('status_$audiobookId')?['isCompleted'] ==
-                    false)) {
-          await downloadStatusBox.put('status_$audiobookId', {
-            'isDownloading': false,
-            'progress': totalProgress,
-            'isCompleted': false,
-            'error': 'Incomplete download.',
-            'audiobookTitle': audiobookTitle,
-            'audiobookId': audiobookId,
-            'isYouTube':
-                downloadStatusBox.get('status_$audiobookId')?['isYouTube'] ??
-                    false,
-          });
+        await downloadStatusBox.delete('task_${task.taskId}');
+        _currentTasks.remove(audiobookId);
+        if (_activeDownloads[audiobookId] != true) break;
+        if (result.status != TaskStatus.complete) {
+          throw StateError('Download failed for $shortTitle. Please retry.');
         }
-        await _cleanupPartialDownload(audiobookId);
-        onCompleted(false);
+        progress = (i + 1) / files.length;
+        onProgressUpdate(progress);
+      }
+      if (_activeDownloads[audiobookId] == true) {
+        completed = true;
+        await downloadStatusBox.put(statusKey, status());
       }
     } catch (e) {
-      _activeDownloads.remove(audiobookId);
-      final existingStatus = downloadStatusBox.get('status_$audiobookId');
-      if (existingStatus == null || existingStatus['error'] == null) {
-        await downloadStatusBox.put('status_$audiobookId', {
-          'isDownloading': false,
-          'progress': existingStatus?['progress'] ?? 0.0,
-          'isCompleted': false,
-          'error': e.toString(),
-          'audiobookTitle': audiobookTitle,
-          'audiobookId': audiobookId,
-          'isYouTube': existingStatus?['isYouTube'] ?? false,
-        });
+      AppLogger.debug('Download error: $e');
+      if (_activeDownloads[audiobookId] == true) {
+        await downloadStatusBox.put(statusKey, status(error: e.toString()));
       }
-      AppLogger.debug('General Download Error: $e');
-      await _cleanupPartialDownload(audiobookId);
-      onCompleted(false);
     } finally {
-      yt?.close();
+      final task = _currentTasks.remove(audiobookId);
+      if (task != null) await downloadStatusBox.delete('task_${task.taskId}');
+      if (!completed) {
+        await _cleanupPartialDownload(audiobookId,
+            keepMetadata: _activeDownloads[audiobookId] == true);
+      }
+      if (_activeDownloads[audiobookId] == false) {
+        await downloadStatusBox.delete(statusKey);
+      }
       _activeDownloads.remove(audiobookId);
     }
+    onCompleted(completed);
   }
 
-  Future<void> _cleanupPartialDownload(String audiobookId) async {
+  Future<void> _cleanupPartialDownload(String audiobookId,
+      {bool keepMetadata = false}) async {
     try {
       final baseDir = await getExternalStorageDirectory();
-      final downloadDir = Directory('${baseDir?.path}/downloads/$audiobookId');
-      if (await downloadDir.exists()) {
-        await downloadDir.delete(recursive: true);
+      if (baseDir == null) return;
+      final directory = Directory('${baseDir.path}/downloads/$audiobookId');
+      if (await directory.exists()) {
+        if (keepMetadata) {
+          await for (final entry in directory.list()) {
+            if (entry is File && entry.path.endsWith('.mp3')) {
+              await entry.delete();
+            }
+          }
+        } else {
+          await directory.delete(recursive: true);
+        }
       }
     } catch (e) {
-      AppLogger.debug('Cleanup Error: $e');
+      AppLogger.debug('Download cleanup error: $e');
     }
   }
 
-  void cancelDownload(String audiobookId) async {
-    _activeDownloads.remove(audiobookId);
-    for (var key in downloadStatusBox.keys.toList()) {
-      if (key.toString().startsWith('task_$audiobookId-')) {
-        final taskJson = downloadStatusBox.get(key);
-        if (taskJson != null) {
-          try {
-            final task =
-                DownloadTask.fromJson(taskJson as Map<String, dynamic>);
-            await _downloader.cancelTaskWithId(task.taskId);
-          } catch (e) {
-            AppLogger.debug('Cancel Error: $e');
-          }
-        }
-        await downloadStatusBox.delete(key);
-      }
+  Future<void> cancelDownload(String audiobookId) async {
+    if (_activeDownloads.containsKey(audiobookId)) {
+      _activeDownloads[audiobookId] = false;
+      final task = _currentTasks[audiobookId];
+      if (task != null) await _downloader.cancelTaskWithId(task.taskId);
+    } else {
+      await _cleanupPartialDownload(audiobookId);
+      await downloadStatusBox.delete('status_$audiobookId');
     }
-    await _cleanupPartialDownload(audiobookId);
-    await downloadStatusBox.delete('status_$audiobookId');
   }
 
   bool isDownloading(String audiobookId) {
@@ -356,43 +177,20 @@ class DownloadManager {
     return status != null ? status['error'] as String? : null;
   }
 
-  bool? isYouTubeDownload(String audiobookId) {
+  Future<void> retryDownload(String audiobookId) async {
     final status = downloadStatusBox.get('status_$audiobookId');
-    return status != null ? status['isYouTube'] as bool? : null;
-  }
-
-  Future<void> pauseDownload(String uniqueFileTaskId) async {
-    try {
-      final taskJson = downloadStatusBox.get('task_$uniqueFileTaskId');
-      if (taskJson != null) {
-        final task = DownloadTask.fromJson(taskJson as Map<String, dynamic>);
-        if (await _downloader.pause(task)) {}
-      }
-    } catch (e) {
-      AppLogger.debug('Pause Error: $e');
+    if (status == null || _activeDownloads.containsKey(audiobookId)) return;
+    final baseDir = await getExternalStorageDirectory();
+    if (baseDir == null) throw StateError('Download storage is unavailable.');
+    final metadata = File('${baseDir.path}/downloads/$audiobookId/files.txt');
+    if (!await metadata.exists()) {
+      throw StateError(
+          'Open this book and download it again to restore its download details.');
     }
-  }
-
-  Future<void> resumeDownload(String uniqueFileTaskId) async {
-    try {
-      final taskJson = downloadStatusBox.get('task_$uniqueFileTaskId');
-      if (taskJson != null) {
-        final task = DownloadTask.fromJson(taskJson as Map<String, dynamic>);
-        await _downloader.resume(task);
-      }
-    } catch (e) {
-      AppLogger.debug('Resume Error: $e');
-    }
-  }
-
-  List<String> getTaskIdsForAudiobook(String audiobookId) {
-    List<String> ids = [];
-    for (final key in downloadStatusBox.keys) {
-      final keyString = key.toString();
-      if (keyString.startsWith('task_$audiobookId-')) {
-        ids.add(keyString.substring('task_'.length));
-      }
-    }
-    return ids;
+    final files = (jsonDecode(await metadata.readAsString()) as List)
+        .map((file) => Map<String, dynamic>.from(file as Map))
+        .toList();
+    await downloadAudiobook(
+        audiobookId, status['audiobookTitle'] as String, files, (_) {}, (_) {});
   }
 }

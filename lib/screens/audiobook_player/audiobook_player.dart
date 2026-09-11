@@ -3,18 +3,14 @@ import 'dart:io';
 
 import 'package:aradia/resources/designs/app_colors.dart';
 import 'package:aradia/resources/models/audiobook.dart';
-import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/resources/services/audio_handler_provider.dart';
 import 'package:aradia/resources/services/character_service.dart';
 import 'package:aradia/resources/services/my_audio_handler.dart';
 import 'package:aradia/screens/audiobook_player/widgets/track_section_dialog.dart';
-import 'package:aradia/utils/app_logger.dart';
 import 'package:aradia/utils/optimized_timer.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_background/flutter_background.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:we_slide/we_slide.dart';
@@ -35,12 +31,9 @@ class AudiobookPlayer extends StatefulWidget {
 class _AudiobookPlayerState extends State<AudiobookPlayer> {
   late AudioHandlerProvider audioHandlerProvider;
   late Box<dynamic> playingAudiobookDetailsBox;
-  late Audiobook audiobook;
-  late List<AudiobookFile> audiobookFiles = [];
   late CharacterService characterService;
 
   // variables for timer and skip silence
-  final bool _skipSilence = false;
   late final OptimizedTimer _sleepTimer;
   StreamSubscription<PositionData>? _positionSubscription;
   bool _isEndOfTrackTimerActive = false;
@@ -77,141 +70,83 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    audiobook = Audiobook.fromMap(playingAudiobookDetailsBox.get('audiobook'));
-
-    // Optimize list building
-    final audiobookFilesData =
-        playingAudiobookDetailsBox.get('audiobookFiles') as List;
-    audiobookFiles = audiobookFilesData
-        .map((fileData) => AudiobookFile.fromMap(fileData))
-        .toList();
-
     audioHandlerProvider = Provider.of<AudioHandlerProvider>(context);
-    // Do NOT reinitialize here. If the handler is empty (fresh app start),
-    // calling play() will cold-restore from Hive via _restoreQueueFromBoxIfEmpty().
-    if (audioHandlerProvider.audioHandler
-        .getAudioSourcesFromPlaylist()
-        .isEmpty) {
-      audioHandlerProvider.audioHandler.restoreIfNeeded();
-    }
-
     // Initialize skip silence state
-    _skipSilenceNotifier.value = _skipSilence;
-
-    if (kDebugMode) {
-      AppLogger.debug('audiobookFiles: ${audiobookFiles.length}');
-      if (audiobookFiles.isNotEmpty) {
-        AppLogger.debug('audiobookFiles: ${audiobookFiles[0].highQCoverImage}');
-      }
-    }
+    _skipSilenceNotifier.value = audioHandlerProvider.audioHandler.skipSilence;
   }
 
   Future<void> startTimer(Duration duration) async {
-    // Check if this is an end-of-track timer
+    _sleepTimer.cancel();
+    _isEndOfTrackTimerActive = false;
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
+    if (!mounted) return;
     if (duration == TimerDurations.endOfTrack) {
-      await _startEndOfTrackTimer();
+      _startEndOfTrackTimer();
       return;
     }
+    _sleepTimer.start(duration: duration, onExpired: _onTimerExpired);
+  }
 
-    // Enable background execution for regular timers
-    const androidConfig = FlutterBackgroundAndroidConfig(
-      notificationTitle: "Audiobook Timer Running",
-      notificationText: "The timer will pause playback when it expires.",
-      notificationImportance: AndroidNotificationImportance.max,
-    );
-
-    final result =
-        await FlutterBackground.initialize(androidConfig: androidConfig);
-    if (result) {
-      await FlutterBackground.enableBackgroundExecution();
-
-      // Use the optimized timer with callbacks
-      _sleepTimer.start(
-        duration: duration,
-        onExpired: () {
-          audioHandlerProvider.audioHandler.pause();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Timer expired! Audiobook paused.')),
-            );
-          }
-          FlutterBackground.disableBackgroundExecution();
-        },
+  void _onTimerExpired() {
+    _isEndOfTrackTimerActive = false;
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    audioHandlerProvider.audioHandler.pause();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Sleep timer finished. Audiobook paused.')),
       );
     }
   }
 
-  Future<void> _startEndOfTrackTimer() async {
+  void _startEndOfTrackTimer() {
+    final handler = audioHandlerProvider.audioHandler;
+    final targetIndex = handler.playbackState.value.queueIndex;
     _isEndOfTrackTimerActive = true;
-    Duration? lastKnownDuration;
-    Duration? lastKnownPosition;
-
-    // Enable background execution for end-of-track timer too
-    const androidConfig = FlutterBackgroundAndroidConfig(
-      notificationTitle: "End of Track Timer Running",
-      notificationText:
-          "The timer will pause playback at the end of current track.",
-      notificationImportance: AndroidNotificationImportance.max,
-    );
-
-    final result =
-        await FlutterBackground.initialize(androidConfig: androidConfig);
-    if (result) {
-      await FlutterBackground.enableBackgroundExecution();
-
-      // Listen to the audio handler's position stream for real-time updates
-      _positionSubscription = audioHandlerProvider.audioHandler
-          .getPositionStream()
-          .listen((positionData) {
-        if (_isEndOfTrackTimerActive && positionData.duration > Duration.zero) {
-          // Only update timer if there's a significant change in position or duration
-          final positionChanged = lastKnownPosition == null ||
-              (positionData.position - lastKnownPosition!).abs() >
-                  const Duration(seconds: 2);
-          final durationChanged = lastKnownDuration != positionData.duration;
-
-          if (positionChanged || durationChanged) {
-            lastKnownPosition = positionData.position;
-            lastKnownDuration = positionData.duration;
-
-            // Calculate remaining time in current track
-            final remainingTime = positionData.duration - positionData.position;
-
-            if (remainingTime > Duration.zero) {
-              // Restart timer with updated remaining time
-              _sleepTimer.start(
-                duration: remainingTime,
-                onExpired: () {
-                  audioHandlerProvider.audioHandler.pause();
-                  _isEndOfTrackTimerActive = false;
-                  FlutterBackground.disableBackgroundExecution();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Track ended! Audiobook paused.')),
-                    );
-                  }
-                },
-              );
-            }
-          }
-        }
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Timer set to pause at end of current track.')),
-        );
+    _positionSubscription = handler.getPositionStream().listen((data) {
+      if (!_isEndOfTrackTimerActive) return;
+      // Catch automatic chapter transitions as well as reaching the final chapter's end.
+      if (handler.playbackState.value.queueIndex != targetIndex ||
+          (data.duration > Duration.zero && data.position >= data.duration)) {
+        _sleepTimer.cancel();
+        _onTimerExpired();
+        return;
       }
-    }
+      if (!handler.playbackState.value.playing ||
+          handler.playbackState.value.processingState !=
+              AudioProcessingState.ready ||
+          data.duration <= Duration.zero) {
+        _sleepTimer.cancel();
+        return;
+      }
+      final remaining = data.duration - data.position;
+      _sleepTimer.start(
+        duration: Duration(
+            microseconds: (remaining.inMicroseconds / handler.speed).ceil()),
+        onExpired: () {
+          if (handler.playbackState.value.playing &&
+              handler.playbackState.value.processingState ==
+                  AudioProcessingState.ready &&
+              data.duration - handler.position <=
+                  const Duration(milliseconds: 200)) {
+            _onTimerExpired();
+          }
+        },
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Timer set to pause at the end of this chapter.')),
+    );
   }
 
   void cancelTimer() {
     _sleepTimer.cancel();
     _isEndOfTrackTimerActive = false;
     _positionSubscription?.cancel();
-    FlutterBackground.disableBackgroundExecution();
+    _positionSubscription = null;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Sleep timer canceled.')),
     );
@@ -293,7 +228,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
       ),
       onPressed: () async {
         await startTimer(TimerDurations.endOfTrack);
-        Navigator.pop(context);
+        if (context.mounted) Navigator.pop(context);
       },
       child: const Row(
         mainAxisSize: MainAxisSize.min,
@@ -318,6 +253,7 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
         child: isLocal
             ? Image.file(
                 File(art.toFilePath()),
+                errorBuilder: (_, __, ___) => const Icon(Icons.headphones),
                 fit: BoxFit.cover,
               )
             : CachedNetworkImage(
@@ -407,8 +343,8 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
 
         return Scaffold(
           appBar: AppBar(
-            backgroundColor: Colors.grey[850],
-            foregroundColor: Colors.white,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
             title: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -421,18 +357,18 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                     children: [
                       Text(
                         headerTitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                           overflow: TextOverflow.ellipsis,
                         ),
                         maxLines: 1,
                       ),
                       Text(
                         headerSubtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white70,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           overflow: TextOverflow.ellipsis,
                         ),
                         maxLines: 1,

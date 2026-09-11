@@ -109,11 +109,12 @@ class _SettingsState extends State<Settings> {
               onPressed: () async {
                 // Persist selection
                 await _box.put('selectedLanguages', temp.toList()..sort());
+                if (!mounted) return;
                 setState(() {
                   _selected = temp.toList()..sort();
                 });
                 AppEvents.languagesChanged.add(null); // <-- broadcast refresh
-                if (mounted) Navigator.of(ctx).pop();
+                if (ctx.mounted) Navigator.of(ctx).pop();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -222,41 +223,25 @@ class _SettingsState extends State<Settings> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<ThemeMode>(
-              title: const Text('System default'),
-              value: ThemeMode.system,
-              groupValue: current,
-              onChanged: (v) {
-                if (v == null) return;
-                themeNotifier.setTheme(v);
-                Navigator.of(ctx).pop();
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Light'),
-              value: ThemeMode.light,
-              groupValue: current,
-              onChanged: (v) {
-                if (v == null) return;
-                themeNotifier.setTheme(v);
-                Navigator.of(ctx).pop();
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Dark'),
-              value: ThemeMode.dark,
-              groupValue: current,
-              onChanged: (v) {
-                if (v == null) return;
-                themeNotifier.setTheme(v);
-                Navigator.of(ctx).pop();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+        return RadioGroup<ThemeMode>(
+          groupValue: current,
+          onChanged: (value) {
+            if (value == null) return;
+            themeNotifier.setTheme(value);
+            Navigator.of(ctx).pop();
+          },
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<ThemeMode>(
+                  title: Text('System default'), value: ThemeMode.system),
+              RadioListTile<ThemeMode>(
+                  title: Text('Light'), value: ThemeMode.light),
+              RadioListTile<ThemeMode>(
+                  title: Text('Dark'), value: ThemeMode.dark),
+              SizedBox(height: 8),
+            ],
+          ),
         );
       },
     );

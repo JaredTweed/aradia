@@ -63,21 +63,20 @@ class PermissionHelper {
   /// Since we're downloading to app's external storage, no storage permissions needed
   /// Returns true if all required permissions are granted
   static Future<bool> requestDownloadPermissions() async {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      final sdkInt = androidInfo.version.sdkInt;
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
 
-      if (sdkInt >= 33) {
-        // Android 13+ - Only request notification permission for download notifications
-        final notification = await Permission.notification.status;
-        if (notification.isDenied) {
-          final result = await Permission.notification.request();
-          return result.isGranted;
-        }
-        return notification.isGranted;
+    if (sdkInt >= 33) {
+      // Android 13+ - Only request notification permission for download notifications
+      final notification = await Permission.notification.status;
+      if (notification.isDenied) {
+        final result = await Permission.notification.request();
+        return result.isGranted;
       }
-      // Android 12 and below - No permissions needed for app external storage
-      return true;
-  
+      return notification.isGranted;
+    }
+    // Android 12 and below - No permissions needed for app external storage
+    return true;
   }
 
   /// Shows a user-friendly permission dialog for download permissions
@@ -96,6 +95,7 @@ class PermissionHelper {
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final sdkInt = androidInfo.version.sdkInt;
 
+    if (!context.mounted) return false;
     if (sdkInt >= 33) {
       final shouldOpenSettings = await showDialog<bool>(
         context: context,

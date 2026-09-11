@@ -23,13 +23,11 @@ import '../../resources/models/history_of_audiobook.dart';
 class AudiobookDetails extends StatefulWidget {
   final Audiobook audiobook;
   final bool isDownload;
-  final bool isYoutube;
   final bool isLocal;
   const AudiobookDetails({
     super.key,
     required this.audiobook,
     this.isDownload = false,
-    this.isYoutube = false,
     this.isLocal = false,
   });
 
@@ -47,26 +45,20 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
 
   Future<void> _playChapter(List<AudiobookFile> files, int index) async {
     try {
-      await playingAudiobookDetailsBox.put('audiobook', widget.audiobook.toMap());
-      await playingAudiobookDetailsBox.put(
-        'audiobookFiles',
-        files.map((e) => e.toMap()).toList(),
-      );
-      await playingAudiobookDetailsBox.put('index', index);
-      await playingAudiobookDetailsBox.put('position', 0);
-
       await audioHandlerProvider.audioHandler
           .initSongs(files, widget.audiobook, index, 0);
       await audioHandlerProvider.audioHandler.play();
-      _weSlideController.show();
+      if (mounted) _weSlideController.show();
     } catch (e) {
       AppLogger.debug('Error starting chapter playback: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to start playback. Please try again.')),
+        const SnackBar(
+            content: Text('Unable to start playback. Please try again.')),
       );
     }
   }
+
   @override
   void initState() {
     _audiobookDetailsBloc = BlocProvider.of<AudiobookDetailsBloc>(context);
@@ -74,7 +66,6 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
     _audiobookDetailsBloc.add(FetchAudiobookDetails(
       widget.audiobook.id,
       widget.isDownload,
-      widget.isYoutube,
       widget.isLocal,
     ));
     playingAudiobookDetailsBox = Hive.box('playing_audiobook_details_box');
@@ -223,16 +214,17 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             // Improved by Nadia
-                            SizedBox(
-                              width: 60,
-                              height: 60,
-                              child: Center(
-                                child: DownloadButton(
-                                  audiobook: widget.audiobook,
-                                  audiobookFiles: state.audiobookFiles,
+                            if (!widget.isLocal && !widget.isDownload)
+                              SizedBox(
+                                width: 60,
+                                height: 60,
+                                child: Center(
+                                  child: DownloadButton(
+                                    audiobook: widget.audiobook,
+                                    audiobookFiles: state.audiobookFiles,
+                                  ),
                                 ),
                               ),
-                            ),
                             // Improved divider
                             Container(
                               height: 40,
@@ -247,59 +239,41 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                               child: Center(
                                 child: IconButton(
                                   padding: EdgeInsets.zero,
-                                  onPressed: () {
-                                    playingAudiobookDetailsBox.put(
-                                        'audiobook', widget.audiobook.toMap());
-                                    playingAudiobookDetailsBox.put(
-                                        'audiobookFiles',
-                                        state.audiobookFiles
-                                            .map((e) => e.toMap())
-                                            .toList());
-
-                                    if (historyOfAudiobook.isAudiobookInHistory(
-                                        widget.audiobook.id)) {
-                                      audioHandlerProvider.audioHandler
-                                          .initSongs(
-                                        state.audiobookFiles,
-                                        widget.audiobook,
-                                        historyOfAudiobook
-                                            .getHistoryOfAudiobookItem(
-                                                widget.audiobook.id)
-                                            .index,
-                                        historyOfAudiobook
-                                            .getHistoryOfAudiobookItem(
-                                                widget.audiobook.id)
-                                            .position,
-                                      );
-                                      playingAudiobookDetailsBox.put(
-                                          'index',
-                                          historyOfAudiobook
-                                              .getHistoryOfAudiobookItem(
-                                                  widget.audiobook.id)
-                                              .index);
-                                      playingAudiobookDetailsBox.put(
-                                          'position',
-                                          historyOfAudiobook
-                                              .getHistoryOfAudiobookItem(
-                                                  widget.audiobook.id)
-                                              .position);
-                                    } else {
-                                      playingAudiobookDetailsBox.put(
-                                          'index', 0);
-                                      playingAudiobookDetailsBox.put(
-                                          'position', 0);
-                                      audioHandlerProvider.audioHandler
-                                          .initSongs(
-                                        state.audiobookFiles,
-                                        widget.audiobook,
-                                        0,
-                                        0,
-                                      );
-                                    }
-
-                                    audioHandlerProvider.audioHandler.play();
-                                    _weSlideController.show();
-                                  },
+                                  onPressed: state.audiobookFiles.isEmpty
+                                      ? null
+                                      : () async {
+                                          final history = historyOfAudiobook
+                                                  .isAudiobookInHistory(
+                                                      widget.audiobook.id)
+                                              ? historyOfAudiobook
+                                                  .getHistoryOfAudiobookItem(
+                                                      widget.audiobook.id)
+                                              : null;
+                                          try {
+                                            await audioHandlerProvider
+                                                .audioHandler
+                                                .initSongs(
+                                              state.audiobookFiles,
+                                              widget.audiobook,
+                                              history?.index ?? 0,
+                                              history?.position ?? 0,
+                                            );
+                                            await audioHandlerProvider
+                                                .audioHandler
+                                                .play();
+                                            if (mounted) {
+                                              _weSlideController.show();
+                                            }
+                                          } catch (e) {
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                  content: Text(
+                                                      'Unable to start playback. Please try again.')),
+                                            );
+                                          }
+                                        },
                                   icon: const Icon(
                                     Ionicons.play,
                                     size: 40,
@@ -392,37 +366,28 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                         Wrap(
                           spacing: 5,
                           children: List.generate(
-                            widget.audiobook.subject!.length,
+                            (widget.audiobook.subject?.length ?? 0),
                             (index) {
-                              return widget.audiobook.origin == 'youtube'
-                                  ? Chip(
-                                      label: Text(
-                                        widget.audiobook.subject![index],
-                                        style: GoogleFonts.ubuntu(
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    )
-                                  : GestureDetector(
-                                      onTap: () {
-                                        final subjectName =
-                                            widget.audiobook.subject![index];
-                                        context.push(
-                                          '/genre_audiobooks',
-                                          extra: subjectName,
-                                        );
-                                        AppLogger.debug(
-                                            'Tapped subject: $subjectName');
-                                      },
-                                      child: Chip(
-                                        label: Text(
-                                          widget.audiobook.subject![index],
-                                          style: GoogleFonts.ubuntu(
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                    );
+                              return GestureDetector(
+                                onTap: () {
+                                  final subjectName =
+                                      widget.audiobook.subject![index];
+                                  context.push(
+                                    '/genre_audiobooks',
+                                    extra: subjectName,
+                                  );
+                                  AppLogger.debug(
+                                      'Tapped subject: $subjectName');
+                                },
+                                child: Chip(
+                                  label: Text(
+                                    widget.audiobook.subject![index],
+                                    style: GoogleFonts.ubuntu(
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              );
                             },
                           ),
                         ),

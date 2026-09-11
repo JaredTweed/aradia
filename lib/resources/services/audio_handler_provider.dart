@@ -3,18 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 
 class AudioHandlerProvider extends ChangeNotifier {
-  late MyAudioHandler _audioHandler = MyAudioHandler();
+  final MyAudioHandler _audioHandler = MyAudioHandler();
+  Future<void>? _initialization;
 
-  Future<void> initialize() async {
-    _audioHandler = await AudioService.init(
-      builder: () => MyAudioHandler(),
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
+    await AudioService.init(
+      builder: () => _audioHandler,
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.oseamiya.librivoxaudiobook',
         androidNotificationChannelName: 'Audio playback',
         androidNotificationOngoing: true,
       ),
     );
-    notifyListeners(); // Notifies listeners that initialization is done
+    await _audioHandler.restoreIfNeeded();
+    notifyListeners();
   }
 
   MyAudioHandler get audioHandler => _audioHandler;

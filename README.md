@@ -13,7 +13,7 @@
 
 ## 📖 About Aradia
 
-**Aradia** is a free, ad-free mobile application offering seamless access to over 20,000 audiobooks from Librivox using Archive.org API. **It can now also play Youtube videos as audiobooks**. Designed for literature enthusiasts and built with passion using **Flutter** and **Dart**. 
+**Aradia** is a free, ad-free mobile application offering seamless access to over 20,000 audiobooks from Librivox using Archive.org API. Designed for literature enthusiasts and built with passion using **Flutter** and **Dart**.
 
 ---
 ## Join Our Discord Community
@@ -61,7 +61,6 @@
 - 🔍 **Smart Search**: Discover audiobooks by title or author or related subjects
 - 🎵 **Mini Audio Player**: Control playback from anywhere
 - 🚫 **Ad-Free Experience**: Pure, uninterrupted listening pleasure
-- 📺 **Youtube Support**: Play Youtube videos as audiobooks
 
 ---
 
@@ -83,6 +82,10 @@ cd aradia
 
 # Install dependencies
 flutter pub get
+
+# Check the code and regression tests
+flutter analyze
+flutter test
 
 # Run the app
 flutter run

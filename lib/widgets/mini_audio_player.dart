@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:aradia/resources/designs/app_colors.dart';
 import 'package:aradia/resources/models/audiobook.dart';
-import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/resources/services/audio_handler_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:aradia/screens/audiobook_player/audiobook_player.dart';
@@ -35,39 +34,11 @@ class MiniAudioPlayer extends StatefulWidget {
 
 class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
   late final WeSlideController weSlideController;
-  String? _initializedAudiobookId; // avoid re-init
 
   @override
   void initState() {
     super.initState();
     weSlideController = Provider.of<WeSlideController>(context, listen: false);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    final provider = Provider.of<AudioHandlerProvider>(context, listen: false);
-    final box = widget.playingAudiobookDetailsBox;
-
-    final audiobookMap = box.get('audiobook');
-    if (audiobookMap == null) return;
-
-    final audiobook = Audiobook.fromMap(audiobookMap);
-    final handlerIsEmpty =
-        provider.audioHandler.getAudioSourcesFromPlaylist().isEmpty;
-    if (!handlerIsEmpty && _initializedAudiobookId == audiobook.id) {
-      return; // already initialized with this book
-    }
-
-    final files = (box.get('audiobookFiles') as List)
-        .map((e) => AudiobookFile.fromMap(e))
-        .toList();
-    final index = box.get('index') as int;
-    final position = box.get('position') as int;
-
-    provider.audioHandler.initSongs(files, audiobook, index, position);
-    _initializedAudiobookId = audiobook.id;
   }
 
   Widget _buildSliderIndicator() {
@@ -76,7 +47,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
       height: 4,
       margin: const EdgeInsets.only(top: 8, bottom: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5),
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -100,6 +71,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
         width: 50,
         height: 50,
         fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.headphones),
       );
     }
 
@@ -123,7 +95,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
       });
     }
 
-    final handler = context.read<AudioHandlerProvider>().audioHandler;
+    final handler = context.watch<AudioHandlerProvider>().audioHandler;
 
     final panelMaxSize = MediaQuery.of(context).size.height;
     final footerHeight = keyboardOpen ? 0.0 : widget.bottomNavBarSize;
@@ -143,7 +115,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
         offstage: keyboardOpen,
         child: Container(
           height: 80,
-          color: Colors.grey[850],
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
           child: Column(
             children: [
               Center(child: _buildSliderIndicator()),
@@ -175,15 +147,15 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Row(
+                          Expanded(
+                              child: Row(
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
                                 child: _coverImage(mediaItem),
                               ),
                               const SizedBox(width: 10),
-                              SizedBox(
-                                width: MediaQuery.of(context).size.width * 0.5,
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -191,14 +163,20 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
                                     // First line: keep the book title (album)
                                     Text(
                                       mediaItem.album ?? "",
-                                      style: const TextStyle(color: Colors.white),
+                                      style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
                                     // Second line: either the track title (multi-track) or the author (single-track)
                                     Text(
                                       secondaryLine,
-                                      style: const TextStyle(color: Colors.white),
+                                      style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
@@ -206,7 +184,7 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
                                 ),
                               ),
                             ],
-                          ),
+                          )),
                           StreamBuilder<PlaybackState>(
                             stream: handler.playbackState,
                             builder: (context, s) {
@@ -216,16 +194,22 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer> {
                                   st?.processingState ==
                                       AudioProcessingState.buffering;
                               if (loading) {
-                                return const CircularProgressIndicator(
-                                  color: AppColors.primaryColor,
-                                  strokeWidth: 2,
-                                );
+                                return const SizedBox(
+                                    width: 48,
+                                    height: 48,
+                                    child: Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: CircularProgressIndicator(
+                                          color: AppColors.primaryColor,
+                                          strokeWidth: 2),
+                                    ));
                               }
                               final playing = st?.playing ?? false;
                               return IconButton(
                                 icon: Icon(
                                   playing ? Icons.pause : Icons.play_arrow,
-                                  color: Colors.white,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
                                 ),
                                 onPressed: () =>
                                     playing ? handler.pause() : handler.play(),

@@ -18,7 +18,7 @@ class AudiobookFile {
   final int? size;
   final String? highQCoverImage;
 
-  final int? startMs;    // chapter start (ms from file start)
+  final int? startMs; // chapter start (ms from file start)
   final int? durationMs; // chapter duration (ms); null => to EOF
 
   AudiobookFile.fromJson(Map json)
@@ -28,21 +28,11 @@ class AudiobookFile {
         track = _parseTrack(json["track"]),
         size = _parseIntSafely(json["size"]),
         length = _parseDoubleSafely(json["length"]),
-        url = "$_base/${json['identifier']}/${json['name']}",
-        highQCoverImage =
-        "$_base/${json['identifier']}/${json["highQCoverImage"]}",
-        startMs = null,
-        durationMs = null;
-
-  AudiobookFile.fromYoutubeJson(Map json)
-      : identifier = json["identifier"]?.toString(),
-        title = json["title"]?.toString(),
-        name = json["name"]?.toString(),
-        track = _parseTrack(json["track"]),
-        size = _parseIntSafely(json["size"]),
-        length = _parseDoubleSafely(json["length"]),
-        url = json["url"]?.toString(),
-        highQCoverImage = json["highQCoverImage"]?.toString(),
+        url =
+            "$_base/${Uri.encodeComponent(json['identifier'].toString())}/${Uri.encodeComponent(json['name'].toString())}",
+        highQCoverImage = json["highQCoverImage"] == null
+            ? null
+            : "$_base/${Uri.encodeComponent(json['identifier'].toString())}/${Uri.encodeComponent(json["highQCoverImage"].toString())}",
         startMs = null,
         durationMs = null;
 
@@ -70,7 +60,9 @@ class AudiobookFile {
   }) {
     return AudiobookFile.fromMap({
       "identifier": identifier,
-      "title": chapterTitle.isNotEmpty ? chapterTitle : "$parentTitle — Chapter $track",
+      "title": chapterTitle.isNotEmpty
+          ? chapterTitle
+          : "$parentTitle — Chapter $track",
       "name": parentTitle,
       "track": track,
       "size": 0,
@@ -113,7 +105,12 @@ class AudiobookFile {
     if (value is int) return value.toDouble();
 
     try {
-      return double.parse(value.toString());
+      final text = value.toString();
+      if (text.contains(':')) {
+        return text.split(':').fold<double>(
+            0, (seconds, part) => seconds * 60 + double.parse(part));
+      }
+      return double.parse(text);
     } catch (e) {
       AppLogger.debug('Error parsing double value: $value, error: $e');
       return 0.0;
@@ -143,14 +140,6 @@ class AudiobookFile {
     return audiobookFiles;
   }
 
-  static List<AudiobookFile> fromYoutubeJsonArray(List jsonFiles) {
-    List<AudiobookFile> audiobookFiles = <AudiobookFile>[];
-    for (var i = 0; i < jsonFiles.length; i++) {
-      audiobookFiles.add(AudiobookFile.fromYoutubeJson(jsonFiles[i]));
-    }
-    return audiobookFiles;
-  }
-
   static Future<Either<String, List<AudiobookFile>>> fromDownloadedFiles(
       String audiobookId) async {
     try {
@@ -160,9 +149,11 @@ class AudiobookFile {
           .listSync()
           .where((file) => file.path.endsWith('.mp3'))
           .toList();
-      files.sort(
-            (a, b) => a.statSync().changed.compareTo(b.statSync().changed),
-      );
+      final numbered = files.every(
+          (file) => RegExp(r'^\d{5}-').hasMatch(file.path.split('/').last));
+      files.sort(numbered
+          ? (a, b) => a.path.compareTo(b.path)
+          : (a, b) => a.statSync().changed.compareTo(b.statSync().changed));
 
       AppLogger.debug(
           'Now the files are going to be parsed from the downloaded files');
@@ -171,32 +162,43 @@ class AudiobookFile {
 
       for (var i = 0; i < files.length; i++) {
         try {
-          final metadata = await MetadataRetriever.fromFile(File(files[i].path));
+          final metadata =
+              await MetadataRetriever.fromFile(File(files[i].path));
           final duration = metadata.trackDuration?.toDouble() ?? 0.0;
 
           audiobookFiles.add(AudiobookFile.fromMap({
             "identifier": audiobookId,
-            "title": files[i].path.split('/').last.split('.').first,
+            "title": files[i]
+                .path
+                .split('/')
+                .last
+                .replaceFirst(RegExp(r'\.mp3$'), '')
+                .replaceFirst(RegExp(r'^\d{5}-'), ''),
             "name": files[i].path.split('/').last,
             "track": i + 1,
             "size": files[i].statSync().size,
             "length": duration / 1000, // Convert milliseconds to seconds
             "url": files[i].path,
             "highQCoverImage":
-            'https://archive.org/services/get-item-image.php?identifier=$audiobookId',
+                'https://archive.org/services/get-item-image.php?identifier=$audiobookId',
           }));
         } catch (e) {
           AppLogger.debug('Error getting metadata for ${files[i].path}: $e');
           audiobookFiles.add(AudiobookFile.fromMap({
             "identifier": audiobookId,
-            "title": files[i].path.split('/').last.split('.').first,
+            "title": files[i]
+                .path
+                .split('/')
+                .last
+                .replaceFirst(RegExp(r'\.mp3$'), '')
+                .replaceFirst(RegExp(r'^\d{5}-'), ''),
             "name": files[i].path.split('/').last,
             "track": i + 1,
             "size": files[i].statSync().size,
             "length": 0.0,
             "url": files[i].path,
             "highQCoverImage":
-            'https://archive.org/services/get-item-image.php?identifier=$audiobookId',
+                'https://archive.org/services/get-item-image.php?identifier=$audiobookId',
           }));
         }
       }
@@ -215,7 +217,7 @@ class AudiobookFile {
       final downloadDir = Directory('${appDir?.path}/local/$audiobookId');
 
       final stringContent =
-      await File('${downloadDir.path}/files.txt').readAsString();
+          await File('${downloadDir.path}/files.txt').readAsString();
       final jsonContent = jsonDecode(stringContent);
       if (jsonContent is List) {
         AppLogger.debug('JSON list length: ${jsonContent.length}');
@@ -231,38 +233,7 @@ class AudiobookFile {
       }
 
       final List<AudiobookFile> audiobookFiles =
-      AudiobookFile.fromLocalJsonArray(jsonContent, downloadDir.path);
-      return Right(audiobookFiles);
-    } catch (e) {
-      AppLogger.debug('Unexpected error: $e');
-      return Left('Unexpected error: $e');
-    }
-  }
-
-  static Future<Either<String, List<AudiobookFile>>> fromYoutubeFiles(
-      String audiobookId) async {
-    try {
-      final appDir = await getExternalStorageDirectory();
-      final downloadDir = Directory('${appDir?.path}/youtube/$audiobookId');
-
-      final stringContent =
-      await File('${downloadDir.path}/files.txt').readAsString();
-      final jsonContent = jsonDecode(stringContent);
-      if (jsonContent is List) {
-        AppLogger.debug('JSON list length: ${jsonContent.length}');
-        if (jsonContent.isNotEmpty) {
-          AppLogger.debug('First item sample fields:');
-          final item = jsonContent[0];
-          if (item is Map) {
-            item.forEach((key, value) {
-              AppLogger.debug('  $key: $value (${value.runtimeType})');
-            });
-          }
-        }
-      }
-
-      final List<AudiobookFile> audiobookFiles =
-      AudiobookFile.fromYoutubeJsonArray(jsonContent);
+          AudiobookFile.fromLocalJsonArray(jsonContent, downloadDir.path);
       return Right(audiobookFiles);
     } catch (e) {
       AppLogger.debug('Unexpected error: $e');
@@ -276,7 +247,7 @@ class AudiobookFile {
         name = map["name"],
         track = map["track"],
         size = map["size"],
-        length = map["length"],
+        length = _parseDoubleSafely(map["length"]),
         url = map["url"],
         highQCoverImage = map["highQCoverImage"],
         startMs = map["startMs"],

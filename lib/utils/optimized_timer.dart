@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 
 class OptimizedTimer {
   Timer? _timer;
+  final DateTime Function() _now;
+  OptimizedTimer({DateTime Function()? now}) : _now = now ?? DateTime.now;
   final ValueNotifier<bool> _isActiveNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<Duration?> _remainingTimeNotifier =
       ValueNotifier<Duration?>(null);
@@ -32,7 +34,8 @@ class OptimizedTimer {
     _isActiveNotifier.value = true;
     _remainingTimeNotifier.value = duration;
 
-    // Start the periodic timer
+    final deadline = _now().add(duration);
+    // Use elapsed wall time, including time spent suspended in the background.
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final currentDuration = _remainingTimeNotifier.value;
       if (currentDuration == null) {
@@ -40,9 +43,9 @@ class OptimizedTimer {
         return;
       }
 
-      final newDuration = currentDuration - const Duration(seconds: 1);
+      final newDuration = deadline.difference(_now());
 
-      if (newDuration.inSeconds <= 0) {
+      if (newDuration <= Duration.zero) {
         // Timer expired
         timer.cancel();
         _timer = null;
@@ -92,7 +95,7 @@ extension TimerDurations on OptimizedTimer {
   static const Duration fortyFiveMinutes = Duration(minutes: 45);
   static const Duration oneHour = Duration(minutes: 60);
   static const Duration ninetyMinutes = Duration(minutes: 90);
-  
+
   /// Special duration to indicate end-of-track timer
   static const Duration endOfTrack = Duration(milliseconds: -1);
 }

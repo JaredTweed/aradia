@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print('usage: dart run bin/dump_chpl_payload.dart <file.m4b>');
+    stdout.writeln('usage: dart run bin/dump_chpl_payload.dart <file.m4b>');
     exit(64);
   }
   final f = File(args.first);
@@ -84,9 +84,9 @@ void _walk(Uint8List d, int start, int end) {
 }
 
 void _dumpChpl(Uint8List body) {
-  print('chpl payload ${body.length} bytes');
+  stdout.writeln('chpl payload ${body.length} bytes');
   final head = body.take(32).toList();
-  print(
+  stdout.writeln(
       'first bytes: ${head.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
 
   // Try to parse with several header/time variants and print the first sane result.
@@ -108,16 +108,16 @@ void _dumpChpl(Uint8List body) {
   for (final (name, hdr, tb) in variants) {
     final parsed = _tryParse(body, headerKind: hdr, timeBytes: tb);
     if (parsed != null) {
-      print('decoded using: $name');
+      stdout.writeln('decoded using: $name');
       for (int i = 0; i < parsed.length; i++) {
         final e = parsed[i];
-        print('  [$i] t=${e.$1}ms  "${e.$2}"');
+        stdout.writeln('  [$i] t=${e.$1}ms  "${e.$2}"');
       }
       return;
     }
   }
 
-  print('could not decode chpl with known variants.');
+  stdout.writeln('could not decode chpl with known variants.');
 }
 
 List<(int, String)>? _tryParse(Uint8List body,

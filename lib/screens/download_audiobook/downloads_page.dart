@@ -82,7 +82,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     );
 
     if (confirmed == true) {
-      _downloadManager
+      await _downloadManager
           .cancelDownload(audiobookId); // This handles cleanup and Hive
       if (mounted) {
         ScaffoldMessenger.of(this.context).showSnackBar(
@@ -107,7 +107,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           IconButton(
             icon: const Icon(Ionicons.folder_open_outline),
             onPressed: _openDownloadFolder,
-            tooltip: 'Open Downloads Folder',
+            tooltip: 'Show Downloads Location',
           ),
         ],
         elevation: 1, // Subtle elevation
@@ -208,18 +208,15 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         context,
                         status['audiobookId'] as String,
                         status['audiobookTitle'] as String),
-                    onRetry: () {
-                      // Placeholder for retry
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                'Retry for "${status['audiobookTitle']}" not yet implemented.')),
-                      );
-                      // TODO: implement retry
-                      // To implement retry:
-                      // 1. Delete existing status: await Hive.box('download_status_box').delete('status_${status['audiobookId']}');
-                      // 2. Call _downloadManager.downloadAudiobook(...) again with original details
-                      //    We'd need to fetch/reconstruct the original Audiobook and files list.
+                    onRetry: () async {
+                      try {
+                        await _downloadManager
+                            .retryDownload(status['audiobookId'] as String);
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$error')));
+                      }
                     })),
                 const SizedBox(height: 16),
               ],
@@ -303,8 +300,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
 
       if (await metadataFile.exists()) {
         final content = await metadataFile.readAsString();
-        audiobook = Audiobook.fromMap(
-            jsonDecode(content) as Map<String, dynamic>);
+        audiobook =
+            Audiobook.fromMap(jsonDecode(content) as Map<String, dynamic>);
       } else {
         AppLogger.debug(
             'Warning: Metadata file not found for $audiobookId. Playing with minimal data.');
@@ -322,7 +319,6 @@ class _DownloadsPageState extends State<DownloadsPage> {
         extra: {
           'audiobook': audiobook,
           'isDownload': true,
-          'isYoutube': false,
           'isLocal': false,
         },
       );

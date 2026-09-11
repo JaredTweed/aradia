@@ -38,6 +38,7 @@ class GenreAudiobooksBloc
   final ArchiveApi archiveApi;
 
   String? _lastGenre;
+  final Map<String, int> _generations = {};
   StreamSubscription<void>? _langSub;
 
   GenreAudiobooksBloc({required this.archiveApi})
@@ -49,9 +50,12 @@ class GenreAudiobooksBloc
     _langSub = AppEvents.languagesChanged.stream.listen((_) {
       final g = _lastGenre;
       if (g != null && g.isNotEmpty) {
-        add(LoadInitialAudiobooksEvent(genre: g, listType: 'popular'));
-        add(LoadInitialAudiobooksEvent(genre: g, listType: 'popularWeekly'));
-        add(LoadInitialAudiobooksEvent(genre: g, listType: 'latest'));
+        add(LoadInitialAudiobooksEvent(
+            genre: g, listType: 'popular', refresh: true));
+        add(LoadInitialAudiobooksEvent(
+            genre: g, listType: 'popularWeekly', refresh: true));
+        add(LoadInitialAudiobooksEvent(
+            genre: g, listType: 'latest', refresh: true));
       }
     });
   }
@@ -63,22 +67,27 @@ class GenreAudiobooksBloc
     _lastGenre = event.genre; // <-- remember genre
 
     // NEW: don't double-load same listType while it's already loading
-    if (state.isLoadingListType(event.listType)) return;
+    if (!event.refresh && state.isLoadingListType(event.listType)) return;
 
     // If audiobooks for this list type already exist, don't reload
-    if (state.audiobooks.containsKey(event.listType) &&
+    if (!event.refresh &&
+        state.audiobooks.containsKey(event.listType) &&
         state.audiobooks[event.listType]!.isNotEmpty) {
       return;
     }
 
+    final generation = (_generations[event.listType] ?? 0) + 1;
+    _generations[event.listType] = generation;
     // Update loading state
     emit(state.copyWith(
+      errors: Map.of(state.errors)..[event.listType] = null,
       isLoading: Map.of(state.isLoading)..[event.listType] = true,
     ));
 
     try {
       final result = await _fetchAudiobooks(event.genre, event.listType, 1);
 
+      if (generation != _generations[event.listType] || emit.isDone) return;
       result.fold(
         (error) => emit(state.copyWith(
           errors: Map.of(state.errors)..[event.listType] = error,
@@ -92,12 +101,13 @@ class GenreAudiobooksBloc
             audiobooks: Map.of(state.audiobooks)..[event.listType] = audiobooks,
             isLoading: Map.of(state.isLoading)..[event.listType] = false,
             hasReachedMax: Map.of(state.hasReachedMax)
-              ..[event.listType] = audiobooks.length < 20,
+              ..[event.listType] = audiobooks.isEmpty,
             page: nextPageMap,
           ));
         },
       );
     } catch (e) {
+      if (generation != _generations[event.listType] || emit.isDone) return;
       emit(state.copyWith(
         errors: Map.of(state.errors)..[event.listType] = e.toString(),
         isLoading: Map.of(state.isLoading)..[event.listType] = false,
@@ -115,8 +125,10 @@ class GenreAudiobooksBloc
     // NEW: don't fetch if already fetching
     if (state.isLoadingListType(event.listType)) return;
 
+    final generation = _generations[event.listType] ?? 0;
     // Update loading state
     emit(state.copyWith(
+      errors: Map.of(state.errors)..[event.listType] = null,
       isLoading: Map.of(state.isLoading)..[event.listType] = true,
     ));
 
@@ -130,6 +142,7 @@ class GenreAudiobooksBloc
         nextPage,
       );
 
+      if (generation != _generations[event.listType] || emit.isDone) return;
       result.fold(
         (error) => emit(state.copyWith(
           errors: Map.of(state.errors)..[event.listType] = error,
@@ -149,12 +162,13 @@ class GenreAudiobooksBloc
             isLoading: Map.of(state.isLoading)..[event.listType] = false,
             hasReachedMax: Map.of(state.hasReachedMax)
               // Keep your original logic so we don't prematurely stop due to de-dupe
-              ..[event.listType] = newAudiobooks.length < 20,
+              ..[event.listType] = newAudiobooks.isEmpty,
             page: Map.of(state.page)..[event.listType] = nextPage,
           ));
         },
       );
     } catch (e) {
+      if (generation != _generations[event.listType] || emit.isDone) return;
       emit(state.copyWith(
         errors: Map.of(state.errors)..[event.listType] = e.toString(),
         isLoading: Map.of(state.isLoading)..[event.listType] = false,

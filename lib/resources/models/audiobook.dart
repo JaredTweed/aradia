@@ -1,4 +1,14 @@
 class Audiobook {
+  static String _text(dynamic value, [String fallback = '']) => value == null
+      ? fallback
+      : value is List
+          ? value.map((item) => item.toString()).join(', ')
+          : value.toString();
+  static int _integer(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+  static double? _rating(dynamic value) =>
+      value == null ? null : double.tryParse('$value');
+
   final String title;
   final String id;
   final String? description;
@@ -31,29 +41,29 @@ class Audiobook {
         origin = '';
 
   Audiobook.fromJson(Map jsonAudiobook)
-      : id = jsonAudiobook["identifier"] ?? '',
-        title = jsonAudiobook["title"] ?? '',
-        totalTime = jsonAudiobook["runtime"],
-        author = jsonAudiobook["creator"] ?? 'Unknown',
+      : id = _text(jsonAudiobook["identifier"]),
+        title = _text(jsonAudiobook["title"]),
+        totalTime = _text(jsonAudiobook["runtime"]),
+        author = _text(jsonAudiobook["creator"], 'Unknown'),
         date = jsonAudiobook['date'] != null
-            ? DateTime.parse(jsonAudiobook["date"])
+            ? DateTime.tryParse(_text(jsonAudiobook["date"]))
             : null,
-        downloads = jsonAudiobook["downloads"] ?? 0,
+        downloads = _integer(jsonAudiobook["downloads"]),
         subject = jsonAudiobook["subject"] == null
             ? []
             : jsonAudiobook["subject"] is String
                 ? [jsonAudiobook["subject"]]
                 : (jsonAudiobook["subject"] as List)
                     .where((s) => !["librivox", "audiobooks", "audiobook"]
-                        .contains(s.toLowerCase()))
+                        .contains(s.toString().toLowerCase()))
                     .toList(),
-        size = jsonAudiobook["item_size"] ?? 0,
+        size = _integer(jsonAudiobook["item_size"]),
         rating = jsonAudiobook["avg_rating"] != null
-            ? double.parse(jsonAudiobook["avg_rating"].toString())
+            ? _rating(jsonAudiobook["avg_rating"])
             : null,
-        reviews = jsonAudiobook["num_reviews"] ?? 0,
-        description = jsonAudiobook["description"] ?? '',
-        language = jsonAudiobook["language"] ?? 'en',
+        reviews = _integer(jsonAudiobook["num_reviews"]),
+        description = _text(jsonAudiobook["description"]),
+        language = _text(jsonAudiobook["language"], 'en'),
         lowQCoverImage =
             "https://archive.org/services/get-item-image.php?identifier=${jsonAudiobook['identifier']}",
         origin = "librivox";
@@ -153,7 +163,7 @@ class Audiobook {
       'description': description ?? this.description,
       'totalTime': totalTime ?? this.totalTime,
       'author': author ?? this.author,
-      'date': date ?? this.date?.toIso8601String(),
+      'date': (date ?? this.date)?.toIso8601String(),
       'downloads': downloads ?? this.downloads,
       'subject': subject ?? this.subject,
       'size': size ?? this.size,

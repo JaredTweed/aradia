@@ -93,6 +93,7 @@ class _AudiobookListViewState extends State<_AudiobookListView>
 
     // Trigger initial load only if no audiobooks exist for this list type
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final bloc = context.read<GenreAudiobooksBloc>();
       if (bloc.state.getAudiobooksForListType(widget.listType).isEmpty) {
         bloc.add(
@@ -142,7 +143,16 @@ class _AudiobookListViewState extends State<_AudiobookListView>
       // Error state
       if (error != null) {
         return Center(
-          child: Text('Error: $error'),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Error: $error'),
+            TextButton(
+                onPressed: () => context.read<GenreAudiobooksBloc>().add(
+                    LoadInitialAudiobooksEvent(
+                        genre: widget.genre,
+                        listType: widget.listType,
+                        refresh: true)),
+                child: const Text('Retry')),
+          ]),
         );
       }
 
