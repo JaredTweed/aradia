@@ -197,13 +197,6 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                           fontWeight: FontWeight.w400,
                         ),
                       ),
-                    Text(
-                      widget.audiobook.origin ?? "librivox",
-                      style: GoogleFonts.ubuntu(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w300,
-                      ),
-                    ),
                     if (widget.audiobook.origin == 'librivox')
                       RatingWidget(
                         rating: widget.audiobook.rating ?? 0.0,
@@ -219,18 +212,14 @@ class _AudiobookDetailsState extends State<AudiobookDetails> {
                           children: [
                             // Improved by Nadia
                             if (!widget.isLocal)
-                              Column(mainAxisSize: MainAxisSize.min, children: [
-                                DownloadButton(
-                                  audiobook: widget.audiobook,
-                                  audiobookFiles:
-                                      state.catalogue ?? state.audiobookFiles,
-                                  onChanged: () => _audiobookDetailsBloc.add(
-                                      FetchAudiobookDetails(widget.audiobook.id,
-                                          widget.isDownload, false)),
-                                ),
-                                const Text('Manage downloads',
-                                    style: TextStyle(color: Colors.white)),
-                              ]),
+                              DownloadButton(
+                                audiobook: widget.audiobook,
+                                audiobookFiles:
+                                    state.catalogue ?? state.audiobookFiles,
+                                onChanged: () => _audiobookDetailsBloc.add(
+                                    FetchAudiobookDetails(widget.audiobook.id,
+                                        widget.isDownload, false)),
+                              ),
                             if (!widget.isLocal)
                               Container(
                                 height: 40,

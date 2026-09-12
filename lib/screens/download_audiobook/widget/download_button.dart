@@ -10,7 +10,7 @@ import 'package:aradia/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:ionicons/ionicons.dart';
+import 'chapter_selection_dialog.dart';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/resources/services/download/download_manager.dart';
@@ -65,7 +65,7 @@ class _DownloadButtonState extends State<DownloadButton> {
     _isDownloaded = _downloadManager.isDownloaded(widget.audiobook.id);
   }
 
-  Future<void> _handleNotificationPermission(BuildContext context) async {
+  Future<void> _openChapterManager() async {
     if (_isManaging) return;
     _isManaging = true;
     try {
@@ -73,12 +73,13 @@ class _DownloadButtonState extends State<DownloadButton> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(this.context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
+      widget.onChanged?.call();
     } finally {
       _isManaging = false;
     }
@@ -132,171 +133,67 @@ class _DownloadButtonState extends State<DownloadButton> {
         }
       }
     }
-    final selected = <int>{
+    final downloaded = <int>{
       for (var i = 0; i < entries.length; i++)
-        if (!urls.contains(entries[i]['url'])) i
+        if (urls.contains(entries[i]['url'])) i
     };
     if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-            builder: (context, update) => AlertDialog(
-                  title: const Text('Manage chapters'),
-                  content: SizedBox(
-                      width: 480,
-                      height: MediaQuery.sizeOf(context).height * 0.5,
-                      child: Column(children: [
-                        Text(fullCatalogue
-                            ? '${urls.length} of ${entries.length} chapters downloaded'
-                            : '${urls.length} downloaded chapters • Connect to load the full list'),
-                        const SizedBox(height: 8),
-                        const Text(
-                            'Select missing chapters to download. Use the delete button to remove a chapter from this device.'),
-                        Row(children: [
-                          TextButton(
-                              onPressed: () => update(() {
-                                    selected.addAll([
-                                      for (var i = 0; i < entries.length; i++)
-                                        if (!urls.contains(entries[i]['url'])) i
-                                    ]);
-                                  }),
-                              child: const Text('Select missing')),
-                          TextButton(
-                              onPressed: () => update(selected.clear),
-                              child: const Text('Clear')),
-                        ]),
-                        Expanded(
-                            child: ListView.builder(
-                                itemCount: entries.length,
-                                itemBuilder: (context, i) {
-                                  final downloaded =
-                                      urls.contains(entries[i]['url']);
-                                  return ListTile(
-                                      leading: downloaded
-                                          ? const Icon(Icons.offline_pin)
-                                          : Checkbox(
-                                              value: selected.contains(i),
-                                              onChanged: (value) => update(() {
-                                                    if (value == true) {
-                                                      selected.add(i);
-                                                    } else {
-                                                      selected.remove(i);
-                                                    }
-                                                  })),
-                                      title: Text(
-                                          '${(entries[i]['order'] as int) + 1}. ${entries[i]['title'] ?? 'Chapter'}'),
-                                      subtitle: Text(downloaded
-                                          ? 'Available offline'
-                                          : 'Not downloaded'),
-                                      trailing: downloaded
-                                          ? IconButton(
-                                              tooltip:
-                                                  'Delete downloaded chapter',
-                                              icon: const Icon(
-                                                  Icons.delete_outline),
-                                              onPressed: () async {
-                                                final remove =
-                                                    await showDialog<bool>(
-                                                        context: context,
-                                                        builder:
-                                                            (context) =>
-                                                                AlertDialog(
-                                                                  title: const Text(
-                                                                      'Delete downloaded chapter?'),
-                                                                  content: Text(
-                                                                      '${entries[i]['title']}\n\nYou can download it again later.'),
-                                                                  actions: [
-                                                                    TextButton(
-                                                                        onPressed: () => Navigator.pop(
-                                                                            context,
-                                                                            false),
-                                                                        child: const Text(
-                                                                            'Keep')),
-                                                                    TextButton(
-                                                                        onPressed: () => Navigator.pop(
-                                                                            context,
-                                                                            true),
-                                                                        child: const Text(
-                                                                            'Delete'))
-                                                                  ],
-                                                                ));
-                                                if (remove != true) return;
-                                                try {
-                                                  await ChapterDownloads.delete(
-                                                      directory,
-                                                      entries[i]['url']
-                                                          as String);
-                                                  try {
-                                                    await audioHandler
-                                                        .downloadedChapterDeleted(
-                                                            widget.audiobook.id,
-                                                            '${directory.path}/${entries[i]['filename']}');
-                                                  } catch (e) {
-                                                    AppLogger.debug(
-                                                        'Could not refresh playback after chapter deletion: $e');
-                                                  }
-                                                  urls.remove(
-                                                      entries[i]['url']);
-                                                  final key =
-                                                      'status_${widget.audiobook.id}';
-                                                  final status = Map<String,
-                                                          dynamic>.from(
-                                                      _downloadManager
-                                                              .downloadStatusBox
-                                                              .get(key) ??
-                                                          {});
-                                                  if (urls.isEmpty) {
-                                                    await _downloadManager
-                                                        .downloadStatusBox
-                                                        .delete(key);
-                                                  } else {
-                                                    status.addAll({
-                                                      'downloadedCount':
-                                                          urls.length,
-                                                      'isCompleted': true,
-                                                      'isDownloading': false,
-                                                      'progress': 1.0
-                                                    });
-                                                    status.remove('error');
-                                                    await _downloadManager
-                                                        .downloadStatusBox
-                                                        .put(key, status);
-                                                  }
-                                                  if (context.mounted) {
-                                                    update(() {});
-                                                  }
-                                                } catch (e) {
-                                                  if (context.mounted) {
-                                                    ScaffoldMessenger.of(
-                                                            context)
-                                                        .showSnackBar(SnackBar(
-                                                            content: Text(
-                                                                'Could not delete chapter: $e')));
-                                                  }
-                                                }
-                                              },
-                                            )
-                                          : null);
-                                })),
-                      ])),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Done')),
-                    FilledButton(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => Navigator.pop(context, true),
-                        child: Text(urls.length == entries.length
-                            ? 'All downloaded'
-                            : selected.isEmpty
-                                ? 'Select chapters'
-                                : 'Download ${selected.length}')),
-                  ],
-                )));
-    if (confirmed == true && mounted) {
-      await _startDownload(
-          [for (final index in selected.toList()..sort()) entries[index]]);
+    final selected = await showDialog<Set<int>>(
+      context: context,
+      builder: (context) => ChapterSelectionDialog(
+        chapters: entries,
+        downloaded: downloaded,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    final additions = selected.difference(downloaded).toList()..sort();
+    final removals = downloaded.difference(selected).toList()..sort();
+    if (_downloadManager.isDownloading(widget.audiobook.id)) {
+      throw StateError(
+          'Wait for this book’s download to finish before changing its chapters.');
+    }
+    try {
+      for (final index in removals) {
+        final url = entries[index]['url'] as String;
+        final current = await ChapterDownloads.completed(directory);
+        final savedEntry =
+            current.where((entry) => entry['url'] == url).firstOrNull;
+        await ChapterDownloads.delete(directory, url);
+        if (savedEntry != null) {
+          try {
+            await audioHandler.downloadedChapterDeleted(widget.audiobook.id,
+                '${directory.path}/${savedEntry['filename']}');
+          } catch (e) {
+            AppLogger.debug(
+                'Could not refresh playback after chapter deletion: $e');
+          }
+        }
+      }
+    } finally {
+      if (removals.isNotEmpty) {
+        final remaining = await ChapterDownloads.completed(directory);
+        final key = 'status_${widget.audiobook.id}';
+        if (remaining.isEmpty) {
+          await _downloadManager.downloadStatusBox.delete(key);
+        } else {
+          final status = Map<String, dynamic>.from(
+              _downloadManager.downloadStatusBox.get(key) ?? {});
+          status.addAll({
+            'audiobookId': widget.audiobook.id,
+            'audiobookTitle': widget.audiobook.title,
+            'downloadedCount': remaining.length,
+            if (fullCatalogue) 'totalCount': entries.length,
+            'isCompleted': true,
+            'isDownloading': false,
+            'progress': 1.0,
+          });
+          status.remove('error');
+          await _downloadManager.downloadStatusBox.put(key, status);
+        }
+      }
+    }
+    if (additions.isNotEmpty && mounted) {
+      await _startDownload([for (final index in additions) entries[index]]);
     }
     if (mounted) widget.onChanged?.call();
   }
@@ -395,17 +292,7 @@ class _DownloadButtonState extends State<DownloadButton> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isDownloaded) {
-      return IconButton(
-        tooltip: 'Manage chapter downloads',
-        onPressed: () => _handleNotificationPermission(context),
-        icon: const Icon(
-          Ionicons.cloud_done,
-          size: 50,
-          color: Colors.white,
-        ),
-      );
-    } else if (_isDownloading) {
+    if (_isDownloading) {
       return GestureDetector(
         onTap: () => context.push('/download'),
         child: Stack(
@@ -433,10 +320,10 @@ class _DownloadButtonState extends State<DownloadButton> {
     }
 
     return IconButton(
-      tooltip: 'Download chapters',
-      onPressed: () => _handleNotificationPermission(context),
+      tooltip: 'Manage chapter downloads',
+      onPressed: _openChapterManager,
       icon: const Icon(
-        Ionicons.cloud_download,
+        Icons.download,
         size: 50,
         color: Colors.white,
       ),
