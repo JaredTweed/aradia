@@ -1,15 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:aradia/resources/services/download/chapter_downloads.dart';
+import 'package:aradia/resources/services/book_chapters_repository.dart';
 
 import 'package:aradia/utils/app_logger.dart';
 import 'package:bloc/bloc.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:hive/hive.dart';
-import 'package:aradia/resources/archive_api.dart';
-import 'package:aradia/resources/services/local/local_book_library.dart';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:meta/meta.dart';
@@ -21,7 +15,11 @@ class AudiobookDetailsBloc
     extends Bloc<AudiobookDetailsEvent, AudiobookDetailsState> {
   StreamSubscription? _favouriteBoxSubscription;
   Audiobook? _currentAudiobook;
-  AudiobookDetailsBloc() : super(AudiobookDetailsInitial()) {
+  final BookChaptersRepository _repository;
+  int _generation = 0;
+  AudiobookDetailsBloc({BookChaptersRepository? repository})
+      : _repository = repository ?? BookChaptersRepository(),
+        super(AudiobookDetailsInitial()) {
     on<FetchAudiobookDetails>((event, emit) => fetchAudiobookDetails(
           event,
           emit,
@@ -52,60 +50,18 @@ class AudiobookDetailsBloc
     AppLogger.debug('fetching audiobook details for id: $id');
     AppLogger.debug('isDownload: $isDownload');
     AppLogger.debug('isLocal: $isLocal');
-    Either<String, List<AudiobookFile>> audiobookFiles;
+    final generation = ++_generation;
     try {
-      if (isLocal) {
-        audiobookFiles =
-            Right(await LocalBookLibrary.filesForId(id, fallback: event.files));
-      } else {
-        final base = await getExternalStorageDirectory();
-        final directory =
-            base == null ? null : Directory('${base.path}/downloads/$id');
-        final cached =
-            directory == null ? null : File('${directory.path}/catalogue.json');
-        List<AudiobookFile>? catalogue;
-        if (cached != null && await cached.exists()) {
-          try {
-            catalogue = (jsonDecode(await cached.readAsString()) as List)
-                .map((item) => AudiobookFile.fromMap(item as Map))
-                .toList();
-          } catch (e) {
-            AppLogger.debug('Unable to read chapter catalogue: $e');
-          }
-        }
-        if (catalogue == null || catalogue.isEmpty) {
-          final remote = await ArchiveApi().getAudiobookFiles(id);
-          catalogue = remote.fold((_) => null, (files) => files);
-          if (catalogue != null &&
-              cached != null &&
-              await directory!.exists()) {
-            await cached.writeAsString(jsonEncode([
-              for (var i = 0; i < catalogue.length; i++)
-                ChapterDownloads.entry(catalogue[i], i)
-            ]));
-          }
-        }
-        if (catalogue != null && catalogue.isNotEmpty) {
-          final playable = directory == null
-              ? catalogue
-              : await ChapterDownloads.withDownloadedFiles(
-                  directory, catalogue);
-          emit(AudiobookDetailsLoaded(playable, catalogue: catalogue));
-          return;
-        }
-        audiobookFiles = isDownload
-            ? await AudiobookFile.fromDownloadedFiles(id)
-            : const Left('Unable to load chapters');
-      }
-
-      audiobookFiles.fold((l) {
-        emit(AudiobookDetailsError());
-      }, (r) {
-        emit(AudiobookDetailsLoaded([...r]));
-      });
+      final chapters = await _repository.load(id,
+          isLocal: isLocal, isDownload: isDownload, fallback: event.files);
+      if (generation != _generation || emit.isDone) return;
+      emit(AudiobookDetailsLoaded(chapters.playable,
+          catalogue: chapters.catalogue));
     } catch (e) {
-      AppLogger.debug('Error coming from fetchAudiobookDetails bloc: $e');
-      emit(AudiobookDetailsError());
+      AppLogger.debug('Error loading audiobook details: $e');
+      if (generation == _generation && !emit.isDone) {
+        emit(AudiobookDetailsError());
+      }
     }
   }
 

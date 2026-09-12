@@ -67,14 +67,19 @@ int isRecommendScreen = 0;
 Future<void> initHive() async {
   final documentDir = await getApplicationDocumentsDirectory();
   await Hive.initFlutter(documentDir.path);
-  await Hive.openBox('favourite_audiobooks_box');
-  await Hive.openBox('download_status_box');
-  await Hive.openBox('playing_audiobook_details_box');
-  await Hive.openBox('theme_mode_box');
-  await Hive.openBox('history_of_audiobook_box');
-  await Hive.openBox('recommened_audiobooks_box');
-  await Hive.openBox('dual_mode_box'); // 0 = audiobook home, 1 = podcast home
-  await Hive.openBox('language_prefs_box');
+  await Future.wait([
+    for (final name in [
+      'favourite_audiobooks_box',
+      'download_status_box',
+      'playing_audiobook_details_box',
+      'theme_mode_box',
+      'history_of_audiobook_box',
+      'recommened_audiobooks_box',
+      'dual_mode_box',
+      'language_prefs_box',
+    ])
+      Hive.openBox(name),
+  ]);
   await migrateSavedLibrary();
   Box recommendedAudiobooksBox = Hive.box('recommened_audiobooks_box');
 

@@ -11,6 +11,7 @@ class JsonResponseCache {
   final DateTime Function() _now;
   final _entries = <String, _Entry>{};
   final _pending = <String, Future<String>>{};
+  int _bytes = 0;
   static const freshFor = Duration(minutes: 5);
   static const staleFor = Duration(hours: 24);
 
@@ -44,13 +45,18 @@ class JsonResponseCache {
         throw http.ClientException(
             'Catalogue returned HTTP ${response.statusCode}');
       }
-      _entries.remove(url);
-      _entries[url] = _Entry(body, response.headers['etag'] ?? cached?.etag,
-          response.headers['last-modified'] ?? cached?.modified, _now());
-      while (_entries.length > 60 ||
-          _entries.values.fold<int>(0, (n, e) => n + e.body.length * 2) >
-              12 * 1024 * 1024) {
-        _entries.remove(_entries.keys.first);
+      final revalidated = response.statusCode == 304;
+      final previous = _entries.remove(url);
+      _bytes -= (previous?.body.length ?? 0) * 2;
+      _entries[url] = _Entry(
+          body,
+          response.headers['etag'] ?? (revalidated ? cached?.etag : null),
+          response.headers['last-modified'] ??
+              (revalidated ? cached?.modified : null),
+          _now());
+      _bytes += body.length * 2;
+      while (_entries.length > 60 || _bytes > 12 * 1024 * 1024) {
+        _bytes -= _entries.remove(_entries.keys.first)!.body.length * 2;
       }
       return body;
     } catch (_) {

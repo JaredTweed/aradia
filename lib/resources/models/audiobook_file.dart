@@ -1,5 +1,4 @@
 import 'package:aradia/resources/services/download/chapter_downloads.dart';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:aradia/utils/app_logger.dart';
@@ -26,7 +25,7 @@ class AudiobookFile {
     if (durationMs != null && durationMs! > 0) {
       return Duration(milliseconds: durationMs!);
     }
-    if (length != null && length! > 0) {
+    if (length != null && length!.isFinite && length! > 0) {
       return Duration(milliseconds: (length! * 1000).round());
     }
     return null;
@@ -54,18 +53,6 @@ class AudiobookFile {
         highQCoverImage = json["highQCoverImage"] == null
             ? null
             : "$_base/${Uri.encodeComponent(json['identifier'].toString())}/${Uri.encodeComponent(json["highQCoverImage"].toString())}",
-        startMs = null,
-        durationMs = null;
-
-  AudiobookFile.fromLocalJson(Map json, String location)
-      : identifier = json["identifier"]?.toString(),
-        title = json["title"]?.toString(),
-        name = json["name"]?.toString(),
-        track = _parseTrack(json["track"]),
-        size = _parseIntSafely(json["size"]),
-        length = _parseDoubleSafely(json["length"]),
-        url = "$location/${json["url"]!}",
-        highQCoverImage = "$location/cover.jpg",
         startMs = null,
         durationMs = null;
 
@@ -152,20 +139,12 @@ class AudiobookFile {
     return audiobookFiles;
   }
 
-  static List<AudiobookFile> fromLocalJsonArray(
-      List jsonFiles, String location) {
-    List<AudiobookFile> audiobookFiles = <AudiobookFile>[];
-    for (var i = 0; i < jsonFiles.length; i++) {
-      audiobookFiles.add(AudiobookFile.fromLocalJson(jsonFiles[i], location));
-    }
-    return audiobookFiles;
-  }
-
   static Future<Either<String, List<AudiobookFile>>> fromDownloadedFiles(
       String audiobookId) async {
     try {
       final appDir = await getExternalStorageDirectory();
-      final downloadDir = Directory('${appDir?.path}/downloads/$audiobookId');
+      if (appDir == null) return const Left('Download storage is unavailable.');
+      final downloadDir = Directory('${appDir.path}/downloads/$audiobookId');
       final manifest = await ChapterDownloads.completed(downloadDir);
       final savedChapters = manifest
           .map((entry) => AudiobookFile.fromMap({
@@ -177,17 +156,23 @@ class AudiobookFile {
               }))
           .toList();
       final savedNames = manifest.map((entry) => entry['filename']).toSet();
-      List<FileSystemEntity> files = downloadDir
-          .listSync()
+      List<FileSystemEntity> files = await downloadDir
+          .list(followLinks: false)
           .where((file) =>
+              file is File &&
               file.path.endsWith('.mp3') &&
               !savedNames.contains(file.path.split('/').last))
           .toList();
+      final fileStats = <String, FileStat>{};
+      for (final file in files) {
+        fileStats[file.path] = await file.stat();
+      }
       final numbered = files.every(
           (file) => RegExp(r'^\d{5}-').hasMatch(file.path.split('/').last));
       files.sort(numbered
           ? (a, b) => a.path.compareTo(b.path)
-          : (a, b) => a.statSync().changed.compareTo(b.statSync().changed));
+          : (a, b) =>
+              fileStats[a.path]!.changed.compareTo(fileStats[b.path]!.changed));
 
       AppLogger.debug(
           'Now the files are going to be parsed from the downloaded files');
@@ -210,7 +195,7 @@ class AudiobookFile {
                 .replaceFirst(RegExp(r'^\d{5}-'), ''),
             "name": files[i].path.split('/').last,
             "track": i + 1,
-            "size": files[i].statSync().size,
+            "size": fileStats[files[i].path]!.size,
             "length": duration / 1000, // Convert milliseconds to seconds
             "url": files[i].path,
             "highQCoverImage":
@@ -228,7 +213,7 @@ class AudiobookFile {
                 .replaceFirst(RegExp(r'^\d{5}-'), ''),
             "name": files[i].path.split('/').last,
             "track": i + 1,
-            "size": files[i].statSync().size,
+            "size": fileStats[files[i].path]!.size,
             "length": 0.0,
             "url": files[i].path,
             "highQCoverImage":
@@ -240,37 +225,6 @@ class AudiobookFile {
       if (manifest.isNotEmpty || numbered) {
         audiobookFiles.sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
       }
-      return Right(audiobookFiles);
-    } catch (e) {
-      AppLogger.debug('Unexpected error: $e');
-      return Left('Unexpected error: $e');
-    }
-  }
-
-  static Future<Either<String, List<AudiobookFile>>> fromLocalFiles(
-      String audiobookId) async {
-    try {
-      final appDir = await getExternalStorageDirectory();
-      final downloadDir = Directory('${appDir?.path}/local/$audiobookId');
-
-      final stringContent =
-          await File('${downloadDir.path}/files.txt').readAsString();
-      final jsonContent = jsonDecode(stringContent);
-      if (jsonContent is List) {
-        AppLogger.debug('JSON list length: ${jsonContent.length}');
-        if (jsonContent.isNotEmpty) {
-          AppLogger.debug('First item sample fields:');
-          final item = jsonContent[0];
-          if (item is Map) {
-            item.forEach((key, value) {
-              AppLogger.debug('  $key: $value (${value.runtimeType})');
-            });
-          }
-        }
-      }
-
-      final List<AudiobookFile> audiobookFiles =
-          AudiobookFile.fromLocalJsonArray(jsonContent, downloadDir.path);
       return Right(audiobookFiles);
     } catch (e) {
       AppLogger.debug('Unexpected error: $e');

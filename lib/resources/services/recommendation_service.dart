@@ -88,16 +88,27 @@ class RecommendationProfile {
     }
 
     final remaining = unique.values.toList();
+    final scores = {for (final book in remaining) book: score(book)};
+    final normalizedAuthors = {
+      for (final book in remaining) book: normalize(book.author ?? '')
+    };
     final result = <Audiobook>[];
     final authorCounts = <String, int>{};
     while (remaining.isNotEmpty && result.length < limit) {
       double diversified(Audiobook b) =>
-          score(b) - (authorCounts[normalize(b.author ?? '')] ?? 0) * 2.5;
-      remaining.sort((a, b) {
-        final order = diversified(b).compareTo(diversified(a));
-        return order != 0 ? order : a.id.compareTo(b.id);
-      });
-      final next = remaining.removeAt(0);
+          scores[b]! - (authorCounts[normalizedAuthors[b]] ?? 0) * 2.5;
+      var best = 0;
+      var bestScore = diversified(remaining.first);
+      for (var i = 1; i < remaining.length; i++) {
+        final candidateScore = diversified(remaining[i]);
+        if (candidateScore > bestScore ||
+            (candidateScore == bestScore &&
+                remaining[i].id.compareTo(remaining[best].id) < 0)) {
+          best = i;
+          bestScore = candidateScore;
+        }
+      }
+      final next = remaining.removeAt(best);
       result.add(next);
       authorCounts.update(normalize(next.author ?? ''), (v) => v + 1,
           ifAbsent: () => 1);

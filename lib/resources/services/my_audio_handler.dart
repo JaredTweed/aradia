@@ -11,6 +11,7 @@ import 'package:aradia/resources/models/history_of_audiobook.dart';
 import 'package:aradia/resources/services/local/cover_image_service.dart';
 import 'package:aradia/resources/services/chromecast_service.dart';
 import 'package:aradia/utils/app_logger.dart';
+import 'package:aradia/utils/async_keyed_lock.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:hive/hive.dart';
@@ -47,6 +48,7 @@ class MyAudioHandler extends BaseAudioHandler {
   bool _sessionConfigured = false;
   bool _isReinitializing = false;
   Future<void> _pendingInitialization = Future.value();
+  final _progressWrites = AsyncKeyedLock();
 
   MyAudioHandler() {
     _player = AudioPlayer(
@@ -79,10 +81,18 @@ class MyAudioHandler extends BaseAudioHandler {
     final idx = _player.currentIndex;
     if (id == null || idx == null) return;
     final liveMs = _player.position.inMilliseconds;
-    await historyOfAudiobook.updateAudiobookPosition(id, idx, liveMs);
-    await playingAudiobookDetailsBox.putAll({'index': idx, 'position': liveMs});
+    await _saveProgress(id, idx, liveMs);
     _lastPersistAt = DateTime.now();
   }
+
+  Future<void> _saveProgress(String id, int index, int position) =>
+      _progressWrites.run('playback', () async {
+        if (id != _activeAudiobookId || _isReinitializing) return;
+        await historyOfAudiobook.updateAudiobookPosition(id, index, position);
+        if (id != _activeAudiobookId || _isReinitializing) return;
+        await playingAudiobookDetailsBox
+            .putAll({'index': index, 'position': position});
+      });
 
   /// Rebuild the queue from Hive on cold start *without* starting playback.
   Future<void> restoreIfNeeded() async {
@@ -125,7 +135,14 @@ class MyAudioHandler extends BaseAudioHandler {
     _playingSub?.cancel();
     _coverSub?.cancel(); // ← add
 
-    _eventSub = _player.playbackEventStream.listen(_broadcastState);
+    _eventSub = _player.playbackEventStream.listen(_broadcastState,
+        onError: (Object error, StackTrace stack) {
+      AppLogger.error('Audio playback failed: $error');
+      playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+          playing: false,
+          errorMessage: error.toString()));
+    });
     _playerStateSub = _player.playerStateStream.listen((_) {
       _broadcastState(_player.playbackEvent);
     });
@@ -185,6 +202,7 @@ class MyAudioHandler extends BaseAudioHandler {
     if (_audioSources == null || queue.value.isEmpty) return;
 
     final newUri = await _resolveActiveArtUri();
+    if (id != _activeAudiobookId || _isReinitializing) return;
     if (newUri == null) return;
 
     final old = queue.value;
@@ -220,6 +238,10 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> refreshBookMetadata(LocalAudiobook book) async {
     if (_activeAudiobookId != MediaHelper.bookKeyForLocal(book)) return;
     final artPath = await resolveCoverForLocal(book);
+    if (_activeAudiobookId != MediaHelper.bookKeyForLocal(book) ||
+        _isReinitializing) {
+      return;
+    }
     final rebuilt = queue.value
         .map((item) => item.copyWith(
               album: book.title,
@@ -441,16 +463,14 @@ class MyAudioHandler extends BaseAudioHandler {
 
       final item = playList[index];
       mediaItem.add(item);
-      playingAudiobookDetailsBox.put('index', index);
 
       // Don’t persist anything until barrier is lifted
       if (!_canPersistProgress) return;
 
       final audiobookId = item.extras?['audiobook_id'] as String?;
       if (audiobookId == null || audiobookId != _activeAudiobookId) return;
-      if (!_player.playing) return; // don’t push MRU while not playing
-
-      _persistNow(audiobookId, index);
+      // Persist position with its chapter index, even when a periodic save was recent.
+      _persistInstant();
     });
   }
 
@@ -460,8 +480,10 @@ class MyAudioHandler extends BaseAudioHandler {
 
     final liveMs = _player.position.inMilliseconds;
     if (liveMs >= 0) {
-      historyOfAudiobook.updateAudiobookPosition(audiobookId, index, liveMs);
-      playingAudiobookDetailsBox.putAll({'index': index, 'position': liveMs});
+      unawaited(
+          _saveProgress(audiobookId, index, liveMs).catchError((Object error) {
+        AppLogger.error('Could not save playback position: $error');
+      }));
       _lastPersistAt = now;
       AppLogger.debug('Position updated: $liveMs ms');
     }

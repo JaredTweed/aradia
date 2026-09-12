@@ -5,6 +5,29 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('a replacement response without validators drops the old validators',
+      () async {
+    var now = DateTime(2026);
+    var calls = 0;
+    final cache = JsonResponseCache(
+        now: () => now,
+        client: MockClient((request) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response('{}', 200, headers: {'etag': 'old'});
+          }
+          if (calls == 2) expect(request.headers['If-None-Match'], 'old');
+          if (calls == 3) {
+            expect(request.headers.containsKey('If-None-Match'), isFalse);
+          }
+          return http.Response('{"new":true}', 200);
+        }));
+    for (var i = 0; i < 3; i++) {
+      await cache.get('https://example.test/books');
+      now = now.add(const Duration(minutes: 6));
+    }
+    cache.close();
+  });
   test('concurrent readers share a request and fresh data avoids HTTP',
       () async {
     var calls = 0;

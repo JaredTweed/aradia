@@ -33,6 +33,7 @@ class DownloadManager {
     bool completed = false;
     int downloadedCount = 0;
     int? totalCount;
+    int lastPublishedPercent = -1;
     final statusKey = 'status_$audiobookId';
     Map<String, dynamic> status({String? error}) => {
           'audiobookId': audiobookId,
@@ -112,10 +113,19 @@ class DownloadManager {
         _currentTasks[audiobookId] = task;
         await downloadStatusBox.put('task_${task.taskId}', task.toJson());
         final result = await _downloader.download(task, onProgress: (value) {
-          if (_activeDownloads[audiobookId] != true || value < 0) return;
+          if (_activeDownloads[audiobookId] != true ||
+              _currentTasks[audiobookId] != task ||
+              !value.isFinite ||
+              value < 0) {
+            return;
+          }
           progress = (i + value.clamp(0.0, 1.0)) / files.length;
           onProgressUpdate(progress);
-          downloadStatusBox.put(statusKey, status());
+          final percent = (progress * 100).floor();
+          if (percent != lastPublishedPercent) {
+            lastPublishedPercent = percent;
+            downloadStatusBox.put(statusKey, status());
+          }
         });
         await downloadStatusBox.delete('task_${task.taskId}');
         _currentTasks.remove(audiobookId);
@@ -123,6 +133,7 @@ class DownloadManager {
           await File('${directory.path}/$filename.part')
               .rename('${directory.path}/$filename');
           await ChapterDownloads.record(directory, entry);
+          savedUrls.add(url);
           downloadedCount++;
         } else {
           final incomplete = File('${directory.path}/$filename.part');

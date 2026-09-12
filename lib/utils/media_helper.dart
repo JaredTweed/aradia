@@ -13,6 +13,7 @@ class MediaHelper {
 
   /// Check if file is an audio file
   static Future<bool> isAudioFile(String filePath) async {
+    filePath = filePath.toLowerCase();
     return filePath.endsWith('.mp3') ||
         filePath.endsWith('.m4a') ||
         filePath.endsWith('.m4b') ||
@@ -25,6 +26,7 @@ class MediaHelper {
 
   /// Check if file is an image file
   static Future<bool> isImageFile(String filePath) async {
+    filePath = filePath.toLowerCase();
     return filePath.endsWith('.jpg') ||
         filePath.endsWith('.jpeg') ||
         filePath.endsWith('.png') ||

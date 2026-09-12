@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 class HistoryOfAudiobook {
   static final HistoryOfAudiobook _instance = HistoryOfAudiobook._internal();
   static bool _initialized = false;
+  Future<void>? _initialization;
 
   factory HistoryOfAudiobook() {
     return _instance;
@@ -22,7 +23,9 @@ class HistoryOfAudiobook {
   Stream<List<HistoryOfAudiobookItem>> get historyStream =>
       _historyStreamController.stream;
 
-  Future<void> _initialize() async {
+  Future<void> _initialize() => _initialization ??= _open();
+
+  Future<void> _open() async {
     if (!_initialized) {
       historyOfAudiobookBox = await Hive.openBox('history_of_audiobook_box');
       _initialized = true;
@@ -97,7 +100,7 @@ class HistoryOfAudiobook {
     }
   }
 
-  void removeAudiobookFromHistory(String audiobookId) async {
+  Future<void> removeAudiobookFromHistory(String audiobookId) async {
     await _ensureInitialized();
     if (historyOfAudiobookBox.containsKey(audiobookId)) {
       await historyOfAudiobookBox.delete(audiobookId);
@@ -105,7 +108,7 @@ class HistoryOfAudiobook {
     }
   }
 
-  void clearHistory() async {
+  Future<void> clearHistory() async {
     await _ensureInitialized();
     await historyOfAudiobookBox.clear();
     _historyStreamController.add(getHistory()); // Emit an empty list

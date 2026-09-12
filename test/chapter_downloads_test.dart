@@ -6,6 +6,32 @@ import 'package:aradia/resources/services/download/chapter_downloads.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('concurrent manifest writes preserve every completed chapter', () async {
+    final directory =
+        await Directory.systemTemp.createTemp('aradia_concurrent');
+    try {
+      final entries = List.generate(
+          8,
+          (i) => ChapterDownloads.entry(
+              AudiobookFile.fromMap(
+                  {'title': 'Chapter $i', 'url': 'https://example.test/$i'}),
+              i));
+      for (final entry in entries) {
+        await File('${directory.path}/${entry['filename']}')
+            .writeAsString('audio');
+      }
+      await Future.wait(
+          entries.map((entry) => ChapterDownloads.record(directory, entry)));
+      expect(await ChapterDownloads.completed(directory), hasLength(8));
+      await Future.wait(entries.take(4).map((entry) =>
+          ChapterDownloads.delete(directory, entry['url'] as String)));
+      expect(
+          (await ChapterDownloads.completed(directory)).map((e) => e['order']),
+          [4, 5, 6, 7]);
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
   test('full catalogue remains visible with none, some or all downloaded',
       () async {
     final directory = await Directory.systemTemp.createTemp('aradia_catalogue');
