@@ -3,10 +3,10 @@
 ![Aradia Header](https://capsule-render.vercel.app/api?type=waving&height=300&color=FF6B35&text=Aradia%20Audiobook&fontColor=ffffff&animation=twinkling&section=header&textBg=false)
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/sagarchaulagai/aradia?label=Latest%20Release&color=FF6B35" alt="Release">
-  <img src="https://img.shields.io/github/stars/sagarchaulagai/aradia?style=social&color=FFA07A" alt="Stars">
-  <img src="https://img.shields.io/github/issues/sagarchaulagai/aradia?color=FF6B35" alt="Issues">
-  <img src="https://img.shields.io/github/license/sagarchaulagai/aradia?color=FFA07A" alt="License">
+  <img src="https://img.shields.io/github/v/release/JaredTweed/aradia?label=Latest%20Release&color=FF6B35" alt="Release">
+  <img src="https://img.shields.io/github/stars/JaredTweed/aradia?style=social&color=FFA07A" alt="Stars">
+  <img src="https://img.shields.io/github/issues/JaredTweed/aradia?color=FF6B35" alt="Issues">
+  <img src="https://img.shields.io/github/license/JaredTweed/aradia?color=FFA07A" alt="License">
 </p>
 
 ---
@@ -16,12 +16,6 @@
 **Aradia** is a free, ad-free mobile application offering seamless access to over 20,000 audiobooks from Librivox using Archive.org API. Designed for literature enthusiasts and built with passion using **Flutter** and **Dart**.
 
 ---
-## Join Our Discord Community
-[![Join our Discord Community](https://invidget.switchblade.xyz/QwTxRKC9UF)](https://discord.gg/QwTxRKC9UF)
-
-## ☕ Support the Project
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y61N3ERH)
-
 ## 📸 App Preview
 
 <p align="center">
@@ -41,7 +35,7 @@
 ## 📥 Download Now
 
 <p align="center">
-  <a href="https://github.com/sagarchaulagai/aradia/releases">
+  <a href="https://github.com/JaredTweed/aradia/releases">
     <img src="https://img.shields.io/badge/Download-Latest%20Release-FF6B35?style=for-the-badge&logo=github" alt="Download Release">
   </a>
 </p>
@@ -75,7 +69,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/sagarchaulagai/aradia.git
+git clone https://github.com/JaredTweed/aradia.git
 
 # Navigate to project directory
 cd aradia

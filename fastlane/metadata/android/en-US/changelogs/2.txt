@@ -1,0 +1,5 @@
+Improved the player, chapter navigation, local audiobook editing, and downloads.
+
+Improved local library scanning, cover lookup, recommendations, and caching.
+
+Fixed playback, download, description, and color consistency issues.

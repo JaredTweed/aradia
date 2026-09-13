@@ -1,0 +1,8 @@
+name: flutter_chrome_cast
+description: Source-only F-Droid compatibility stub for Aradia.
+version: 1.2.5
+environment:
+  sdk: ^3.5.4
+dependencies:
+  flutter:
+    sdk: flutter

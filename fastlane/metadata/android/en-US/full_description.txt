@@ -1,0 +1,7 @@
+Aradia is a free, ad-free audiobook player for public-domain books from LibriVox.
+
+Search by title, author, or subject, then stream a book immediately or download it for offline listening. Keep track of your progress, adjust playback speed, skip silence, and set a sleep timer.
+
+You can also add local audiobook files to your library. Aradia groups local files into books, reads their metadata, lets you edit a book's title, author, and cover, and remembers where you stopped listening.
+
+Aradia contains no advertising and does not require an account.
