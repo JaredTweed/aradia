@@ -13,6 +13,10 @@
 
 ## 📖 About Aradia
 
+This maintained fork and its F-Droid version are based on the original
+[Aradia project by Sagar Chaulagain](https://github.com/sagarchaulagai/aradia).
+The original project's MIT license and copyright notice are retained.
+
 **Aradia** is a free, ad-free mobile application offering seamless access to over 20,000 audiobooks from Librivox using Archive.org API. Designed for literature enthusiasts and built with passion using **Flutter** and **Dart**.
 
 ---

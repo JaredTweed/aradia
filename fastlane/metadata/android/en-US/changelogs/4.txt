@@ -1,0 +1,1 @@
+Separate APKs for each processor architecture, automatic F-Droid updates, locked build dependencies, and attribution to the original Aradia project by Sagar Chaulagain.

@@ -5,3 +5,5 @@ Search by title, author, or subject, then stream a book immediately or download 
 You can also add local audiobook files to your library. Aradia groups local files into books, reads their metadata, lets you edit a book's title, author, and cover, and remembers where you stopped listening.
 
 Aradia contains no advertising and does not require an account.
+
+This F-Droid version is based on the original Aradia project by Sagar Chaulagain: https://github.com/sagarchaulagai/aradia. This fork is maintained by Jared Tweed under the original project's MIT license.
