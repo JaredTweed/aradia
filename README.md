@@ -23,15 +23,15 @@ The original project's MIT license and copyright notice are retained.
 ## 📸 App Preview
 
 <p align="center">
-  <img src="screenshots/1.jpg" alt="Screenshot 1" width="30%">
-  <img src="screenshots/2.jpg" alt="Screenshot 2" width="30%">
-  <img src="screenshots/3.jpg" alt="Screenshot 3" width="30%">
+  <img src="screenshots/1.png" alt="Home and local audiobooks in dark mode" width="30%">
+  <img src="screenshots/2.png" alt="Home and local audiobooks in light mode" width="30%">
+  <img src="screenshots/3.png" alt="Expanded audiobook player" width="30%">
 </p>
 
 <p align="center">
-  <img src="screenshots/4.jpg" alt="Screenshot 4" width="30%">
-  <img src="screenshots/5.jpg" alt="Screenshot 5" width="30%">
-  <img src="screenshots/6.jpg" alt="Screenshot 6" width="30%">
+  <img src="screenshots/4.png" alt="Audiobook search" width="30%">
+  <img src="screenshots/5.png" alt="Downloaded audiobooks" width="30%">
+  <img src="screenshots/6.png" alt="Popular audiobooks and genres" width="30%">
 </p>
 
 ---
