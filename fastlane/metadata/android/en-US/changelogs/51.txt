@@ -1,0 +1,1 @@
+Updated app screenshots and prepared reproducible F-Droid releases.
