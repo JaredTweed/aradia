@@ -91,13 +91,6 @@ flutter run
 
 ---
 
-## 🌟 Upcoming Innovations
-
-1. **Podcast Support**: An Entire New Page for Podcasts
-2. **Support https://audiobookbay.lu/** : App will be able to play torrent files from audiobookbay.lu
-
----
-
 ## 📄 Licensing
 
 This project is open-sourced under the MIT License. For complete details, refer to the [LICENSE](LICENSE) file.
