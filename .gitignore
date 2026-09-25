@@ -44,6 +44,12 @@ app.*.map.json
 /android/app/release
 /android/app/.cxx/
 
+# Keep release signing material out of source control.
+*.jks
+*.keystore
+*.p12
+keystore-password.txt
+
 # to only publish android, ignore these
 ios/
 macos/
