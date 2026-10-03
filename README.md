@@ -19,6 +19,11 @@ The original project's MIT license and copyright notice are retained.
 
 **Aradia** is a free, ad-free mobile application offering seamless access to over 20,000 audiobooks from Librivox using Archive.org API. Designed for literature enthusiasts and built with passion using **Flutter** and **Dart**.
 
+Local audiobook cover search sends your search terms to Open Library and Apple's
+iTunes Search API only when you request a search. Fonts are bundled for offline
+use. App updates are handled by your app store; Aradia does not install APKs.
+The F-Droid build does not include Google Cast controls or location permissions.
+
 ---
 ## 📸 App Preview
 

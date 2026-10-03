@@ -20,6 +20,7 @@ import 'widgets/equalizer_dialog.dart';
 import 'widgets/equalizer_icon.dart';
 import 'widgets/progress_bar_widget.dart';
 import 'widgets/chromecast_button.dart';
+import 'package:aradia/config/build_features.dart';
 
 class AudiobookPlayer extends StatefulWidget {
   const AudiobookPlayer({super.key});
@@ -315,10 +316,11 @@ class _AudiobookPlayerState extends State<AudiobookPlayer> {
                       openBookDetails(context, Audiobook.fromMap(saved), files);
                     },
                   ),
-                  ChromeCastButton(
-                    chromeCastService:
-                        audioHandlerProvider.audioHandler.chromeCastService,
-                  ),
+                  if (supportsGoogleCast)
+                    ChromeCastButton(
+                      chromeCastService:
+                          audioHandlerProvider.audioHandler.chromeCastService,
+                    ),
                   IconButton(
                     tooltip: 'Equalizer',
                     onPressed: () {

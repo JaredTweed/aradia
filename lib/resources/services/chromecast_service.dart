@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:aradia/config/build_features.dart';
 import 'package:aradia/resources/models/audiobook.dart';
 import 'package:aradia/resources/models/audiobook_file.dart';
 import 'package:aradia/utils/app_logger.dart';
@@ -13,7 +14,7 @@ class ChromeCastService {
   StreamSubscription<List<GoogleCastDevice>>? _devicesSubscription;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (!supportsGoogleCast || _initialized) return;
     try {
       const appId = GoogleCastDiscoveryCriteria.kDefaultApplicationId;
       final options = GoogleCastOptionsAndroid(appId: appId);
@@ -26,6 +27,7 @@ class ChromeCastService {
   }
 
   void startDiscovery() {
+    if (!supportsGoogleCast) return;
     try {
       GoogleCastDiscoveryManager.instance.startDiscovery();
       AppLogger.debug('ChromeCast device discovery started');
@@ -43,6 +45,7 @@ class ChromeCastService {
   }
 
   void stopDiscovery() {
+    if (!supportsGoogleCast) return;
     try {
       GoogleCastDiscoveryManager.instance.stopDiscovery();
       AppLogger.debug('ChromeCast device discovery stopped');
@@ -58,8 +61,9 @@ class ChromeCastService {
       GoogleCastSessionManager.instance.currentSessionStream;
 
   bool get isConnected =>
+      supportsGoogleCast &&
       GoogleCastSessionManager.instance.connectionState ==
-      GoogleCastConnectState.connected;
+          GoogleCastConnectState.connected;
 
   Future<void> connectToDevice(GoogleCastDevice device) async {
     try {

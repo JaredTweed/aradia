@@ -6,6 +6,7 @@ import 'package:aradia/resources/services/chromecast_service.dart';
 import 'package:aradia/screens/recommendation/recommendation_screen.dart';
 import 'package:aradia/screens/setting/settings.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -29,6 +30,8 @@ import 'package:we_slide/we_slide.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Fonts are bundled: startup must never fetch fonts from third-party servers.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   await initHive();
 

@@ -1,5 +1,6 @@
 import 'package:aradia/resources/services/chromecast_service.dart';
 import 'package:flutter/material.dart';
+import 'package:aradia/config/build_features.dart';
 import 'package:flutter_chrome_cast/flutter_chrome_cast.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -12,6 +13,7 @@ class ChromeCastButton extends StatelessWidget {
   });
 
   Future<void> _showDeviceDialog(BuildContext context) async {
+    if (!supportsGoogleCast) return;
     // Request location permission (required for WiFi scanning on Android 10+)
     final status = await Permission.location.request();
 
@@ -43,6 +45,7 @@ class ChromeCastButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!supportsGoogleCast) return const SizedBox.shrink();
     return StreamBuilder<GoogleCastSession?>(
       stream: chromeCastService.sessionStream,
       builder: (context, snapshot) {

@@ -1,0 +1,1 @@
+Removed the legacy self-updater and APK installation permission. Fonts are bundled for offline use. F-Droid builds hide unsupported Cast controls and remove Cast permissions and services. Disclosed optional cover search services. Disabled cleartext traffic.

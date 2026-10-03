@@ -1,19 +1,14 @@
 import 'package:aradia/resources/designs/app_colors.dart';
 import 'package:aradia/screens/home/widgets/favourite_section.dart';
 import 'package:aradia/screens/home/widgets/local_imports_section.dart';
-import 'package:aradia/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:aradia/screens/home/bloc/home_bloc.dart';
 import 'package:aradia/screens/home/widgets/my_audiobooks.dart';
-import 'package:aradia/utils/permission_helper.dart';
 
-import '../../resources/latest_version_fetch.dart';
-import '../../resources/models/latest_version_fetch_model.dart';
 import 'widgets/recommended_books_section.dart';
 import 'widgets/history_section.dart';
-import 'widgets/update_prompt_dialog.dart';
 import 'widgets/app_bar_actions.dart';
 import 'widgets/welcome_section.dart';
 import 'constants/home_constants.dart';
@@ -27,10 +22,6 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  // Update & version
-  final LatestVersionFetch _latestVersionFetch = LatestVersionFetch();
-  final String currentVersion = "3.0.0";
-
   // Keep blocs/controllers stable across theme rebuilds
   late final HomeBloc _popularBloc;
   late final HomeBloc _trendingBloc;
@@ -47,8 +38,6 @@ class _HomeState extends State<Home> {
 
     _popularCtrl = ScrollController();
     _trendingCtrl = ScrollController();
-
-    _checkForUpdates();
   }
 
   @override
@@ -59,61 +48,6 @@ class _HomeState extends State<Home> {
     _popularCtrl.dispose();
     _trendingCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _checkForUpdates() async {
-    final result = await _latestVersionFetch.getLatestVersion();
-
-    result.fold(
-      (error) => AppLogger.debug(error),
-      (latestVersionModel) async {
-        if (latestVersionModel.latestVersion != null &&
-            latestVersionModel.latestVersion!.compareTo(currentVersion) > 0) {
-          await _handleUpdateAvailable(latestVersionModel);
-        }
-      },
-    );
-  }
-
-  Future<void> _handleUpdateAvailable(
-    LatestVersionFetchModel versionModel,
-  ) async {
-    final permissionGranted =
-        await PermissionHelper.handleUpdatePermission(context);
-
-    if (permissionGranted) {
-      _proceedWithUpdate(versionModel);
-    }
-  }
-
-  Future<void> _proceedWithUpdate(
-    LatestVersionFetchModel versionModel,
-  ) async {
-    final existingApk =
-        await _latestVersionFetch.getApkPath(versionModel.latestVersion!);
-
-    if (existingApk != null) {
-      _showUpdatePrompt(versionModel);
-    } else {
-      final success =
-          await _latestVersionFetch.downloadUpdate(versionModel.latestVersion!);
-      if (success) {
-        _showUpdatePrompt(versionModel);
-      }
-    }
-  }
-
-  void _showUpdatePrompt(LatestVersionFetchModel versionModel) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) => UpdatePromptDialog(
-        currentVersion: currentVersion,
-        newVersion: versionModel.latestVersion!,
-        changelogs: versionModel.changelogs ?? [],
-        onUpdate: () =>
-            _latestVersionFetch.installUpdate(versionModel.latestVersion!),
-      ),
-    );
   }
 
   @override
