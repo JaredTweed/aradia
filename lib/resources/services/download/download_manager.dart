@@ -69,12 +69,12 @@ class DownloadManager {
       if (hasNotifications) {
         _downloader.configureNotification(
           running: TaskNotification(
-              'Downloading $audiobookTitle', 'File: {filename}'),
+              'Downloading $audiobookTitle', 'File: {displayName}'),
           progressBar: true,
           complete: TaskNotification(
-              'Download complete: $audiobookTitle', 'File: {filename}'),
+              'Download complete: $audiobookTitle', 'File: {displayName}'),
           error: TaskNotification(
-              'Download error: $audiobookTitle', 'File: {filename}'),
+              'Download error: $audiobookTitle', 'File: {displayName}'),
         );
       }
       for (var i = 0; i < files.length; i++) {
@@ -106,6 +106,9 @@ class DownloadManager {
           taskId: '$audiobookId-$i',
           url: url!,
           filename: '$filename.part',
+          // Notifications show the final name while incomplete files remain
+          // separate until the download is successfully committed.
+          displayName: filename,
           directory: 'downloads/$audiobookId',
           baseDirectory: BaseDirectory.applicationDocuments,
           updates: Updates.statusAndProgress,

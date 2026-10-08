@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- audio_service looks these icons up by name from Dart. Keep them when
+     shrinking release resources so media notifications and custom actions work. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_replay_10,@drawable/ic_forward_30,@drawable/ic_launcher_monochrome,@drawable/audio_service_play_arrow,@drawable/audio_service_pause,@drawable/audio_service_skip_next" />

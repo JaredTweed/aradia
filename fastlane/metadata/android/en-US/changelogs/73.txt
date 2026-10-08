@@ -1,0 +1,1 @@
+Fixed missing media notification icons in release builds, restoring background playback. Download notifications now show the final filename instead of the temporary .part filename.
